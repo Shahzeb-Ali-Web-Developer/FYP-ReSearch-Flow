@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+requests
+pdfplumber
+pandas
+python-dotenv
+supabase
+serpapi
+fuzzywuzzy
+beautifulsoup4
+python-multipart
+aiohttp
+redis
+google-search-results
+pydantic-settings
