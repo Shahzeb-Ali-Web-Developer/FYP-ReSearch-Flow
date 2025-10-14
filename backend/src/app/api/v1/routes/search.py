@@ -5,20 +5,30 @@ from ....utils.dedupe import clean_and_deduplicate
 from ....crud.papers_crud import store_to_supabase
 import pandas as pd
 import logging
+import asyncio
 
 router = APIRouter()
 
-def store_papers_background(cleaned_df, topic):
+async def store_papers_background(cleaned_df, topic):
     """Background task to store papers in Supabase"""
     try:
         if not cleaned_df.empty:
-            inserted = store_to_supabase(cleaned_df, topic)
-            logging.info(f"Background: Stored {inserted} papers for '{topic}'")
+            # Run in executor to prevent blocking
+            loop = asyncio.get_event_loop()
+            inserted = await loop.run_in_executor(
+                None, 
+                store_to_supabase, 
+                cleaned_df, 
+                topic
+            )
+            logging.info(f"Background storage complete: {inserted} papers for '{topic}'")
+            print(f"✓ Background storage complete: {inserted} papers saved to database")
     except Exception as e:
         logging.error(f"Background storage error: {str(e)}")
+        print(f"✗ Background storage error: {str(e)}")
 
 @router.get("/fetch")
-def fetch_papers(
+async def fetch_papers(
     topic: str, 
     limit: int = 20, 
     extract_content: bool = False,
@@ -26,10 +36,9 @@ def fetch_papers(
 ):
     """
     Fetch research papers and return immediately while storing in background.
-    Returns papers in format ready for frontend display.
     """
     try:
-        logging.info(f"Fetching papers for: {topic}")
+        logging.info(f"Starting fetch for topic: {topic}, limit: {limit}")
         
         # Fetch from both sources
         semantic_df = fetch_semantic_papers(topic, limit=limit, extract_content=extract_content)
@@ -58,9 +67,10 @@ def fetch_papers(
         # Store in background (non-blocking)
         if background_tasks and not cleaned.empty:
             background_tasks.add_task(store_papers_background, cleaned, topic)
-            logging.info(f"Queued {len(cleaned)} papers for background storage")
+            logging.info(f"✓ Queued {len(cleaned)} papers for background storage")
+            print(f"✓ Returning {len(papers_list)} papers to user, saving to DB in background...")
         
-        # Return formatted response
+        # Return formatted response immediately
         return {
             "status": "success",
             "message": f"Found {len(papers_list)} papers for '{topic}'",

@@ -1,6 +1,7 @@
 import re
 import pandas as pd
 import logging
+import uuid
 from serpapi.google_search import GoogleSearch
 from .pdf_extractor import extract_pdf_text_retry
 from ..core.config import settings
@@ -51,7 +52,7 @@ def fetch_google_papers_serpapi(topic, limit=20, extract_content=False):
                 content = extract_pdf_text_retry(url)
 
             paper = {
-                'paperId': 'N/A',
+                'paperId': 'str(uuid.uuid4())',
                 'title': r.get('title', 'N/A'),
                 'abstract': r.get('snippet', 'N/A'),
                 'authors': authors,

@@ -1,3 +1,12 @@
+.env
+.env.local
+.env.development
+.env.production
+venv/
+backend/.env
+frontend/.env
+frontend/.env.development
+frontend/.env.production
 # Logs
 logs
 *.log
