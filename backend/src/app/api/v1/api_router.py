@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from src.app.api.v1.routes.search import router as search_router
 
-from src.app.api.v1.routes.search import router as search_router
+from src.app.api.v1.routes.search import router as papers_router
 
 
 api_router = APIRouter()
