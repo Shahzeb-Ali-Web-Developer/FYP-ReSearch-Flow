@@ -14,7 +14,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://fyp-researchflow.vercel.app",
+        "https://researchflow-puce.vercel.app",
         "http://localhost:5173",  # Vite default
     
         
