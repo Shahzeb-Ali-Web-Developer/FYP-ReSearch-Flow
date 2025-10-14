@@ -13,12 +13,7 @@ app = FastAPI(
 # CORS middleware - IMPORTANT for frontend connection
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://researchflow-puce.vercel.app",
-        "http://localhost:5173",  # Vite default
-    
-        
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
