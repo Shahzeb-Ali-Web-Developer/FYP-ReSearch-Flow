@@ -19,7 +19,7 @@ export const searchAPI = {
    */
   async fetchPapers(topic, limit = 20, extractContent = false) {
     try {
-      const url = new URL(`${API_BASE_URL}/search/fetch`);
+      const url = new URL(`${API_BASE_URL}/api/v1/search/fetch`);
       url.searchParams.append('topic', topic);
       url.searchParams.append('limit', limit);
       url.searchParams.append('extract_content', extractContent);
