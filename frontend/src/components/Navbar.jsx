@@ -196,7 +196,7 @@ export default function Navbar() {
         <NavButton>Contact</NavButton>
       </nav>
 
-      <div className="flex items-center space-x-3">
+      <div className="hidden md:flex items-center space-x-3">
         {isAuthenticated ? (
           <div className="relative">
             <UserAvatar
@@ -238,7 +238,7 @@ export default function Navbar() {
             </NavLink>
 
             {!isAuthenticated && (
-              <>
+              <div>
                 <hr className="my-2" />
                 <button
                   onClick={() => {
@@ -258,7 +258,7 @@ export default function Navbar() {
                 >
                   Get Started
                 </button>
-              </>
+              </div>
             )}
           </div>
         )}

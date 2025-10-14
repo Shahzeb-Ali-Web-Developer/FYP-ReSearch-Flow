@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { FaGoogle, FaFacebookF, FaApple, FaGithub, FaEye, FaEyeSlash } from 'react-icons/fa';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import bg from '../assets/bg.jpg'
 import researchLogo from '../assets/researchLogo.jpg'
 
 const AuthPage = () => {
@@ -104,7 +103,7 @@ const AuthPage = () => {
         if (error) {
           setErrors({ submit: error });
         } else {
-          navigate('/dashboard'); // Redirect to dashboard or home page
+          navigate('/'); // Redirect to dashboard or home page
         }
       } else {
         // Handle sign up
@@ -151,8 +150,7 @@ const AuthPage = () => {
   };
 
   return (
-    <div className="min-h-screen viga-font flex items-center justify-center p-4"
-    style={{ backgroundImage: `url(${bg})`, backgroundSize: 'cover', backgroundPosition: 'center' }}>
+    <div className="min-h-screen bg-[#391153] viga-font flex items-center justify-center p-4">
       <div className="w-full my-10 max-w-md">
         {/* Logo and Title */}
         <div className="text-center justify-center gap-2 flex flex-row">
@@ -203,7 +201,7 @@ const AuthPage = () => {
             >
               <FaGoogle className=" text-red-800 text-3xl" />
             </button>
-            
+
             {/* Github */}
             <button
               onClick={() => handleSocialLogin("Github")}
