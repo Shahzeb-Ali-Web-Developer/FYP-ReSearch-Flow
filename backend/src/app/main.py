@@ -13,7 +13,10 @@ app = FastAPI(
 # CORS middleware - IMPORTANT for frontend connection
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://fyp-research-flow.vercel.app",
+        "http://localhost:5173",  # Vite default
+],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
