@@ -8,61 +8,77 @@ import logging
 
 router = APIRouter()
 
+def store_papers_background(cleaned_df, topic):
+    """Background task to store papers in Supabase"""
+    try:
+        if not cleaned_df.empty:
+            inserted = store_to_supabase(cleaned_df, topic)
+            logging.info(f"Background: Stored {inserted} papers for '{topic}'")
+    except Exception as e:
+        logging.error(f"Background storage error: {str(e)}")
+
 @router.get("/fetch")
-def fetch_papers(topic: str, limit: int = 20, extract_content: bool = False):
+def fetch_papers(
+    topic: str, 
+    limit: int = 20, 
+    extract_content: bool = False,
+    background_tasks: BackgroundTasks = None
+):
     """
-    Fetch research papers from Semantic Scholar and Google Scholar.
-    
-    - topic: Research topic to search
-    - limit: Number of papers per source (default 20)
-    - extract_content: Whether to download and extract PDF content (slow, default False)
+    Fetch research papers and return immediately while storing in background.
+    Returns papers in format ready for frontend display.
     """
     try:
-        logging.info(f"Starting fetch for topic: {topic}, limit: {limit}")
+        logging.info(f"Fetching papers for: {topic}")
         
-        # Fetch from Semantic Scholar
+        # Fetch from both sources
         semantic_df = fetch_semantic_papers(topic, limit=limit, extract_content=extract_content)
-        logging.info(f"Semantic Scholar returned {len(semantic_df)} papers")
+        logging.info(f"Semantic Scholar: {len(semantic_df)} papers")
         
-        # Fetch from Google Scholar
         google_df = fetch_google_papers_serpapi(topic, limit=limit, extract_content=extract_content)
-        logging.info(f"Google Scholar returned {len(google_df)} papers")
+        logging.info(f"Google Scholar: {len(google_df)} papers")
         
-        # Combine results
+        # Check if no results
         if semantic_df.empty and google_df.empty:
-            logging.warning(f"No papers found for topic: {topic}")
+            logging.warning(f"No results for: {topic}")
             return {
                 "status": "no_results",
-                "message": "No papers found for this topic",
+                "message": f"No papers found for '{topic}'. Try different keywords.",
                 "count": 0,
-                "semantic_count": 0,
-                "google_count": 0
+                "papers": []
             }
         
+        # Combine and clean
         combined = pd.concat([semantic_df, google_df], ignore_index=True)
-        logging.info(f"Combined total: {len(combined)} papers")
-        
-        # Clean and deduplicate
         cleaned = clean_and_deduplicate(combined, topic)
-        logging.info(f"After cleaning: {len(cleaned)} papers")
         
-        # Store to Supabase
-        if not cleaned.empty:
-            inserted = store_to_supabase(cleaned, topic)
-            logging.info(f"Successfully stored {inserted} papers")
-        else:
-            inserted = 0
-            logging.warning("No papers to store after cleaning")
+        # Convert to list of dicts for JSON
+        papers_list = cleaned.to_dict('records')
         
+        # Store in background (non-blocking)
+        if background_tasks and not cleaned.empty:
+            background_tasks.add_task(store_papers_background, cleaned, topic)
+            logging.info(f"Queued {len(cleaned)} papers for background storage")
+        
+        # Return formatted response
         return {
             "status": "success",
-            "count": inserted,
-            "total_fetched": len(combined),
-            "after_cleaning": len(cleaned),
-            "semantic_count": len(semantic_df),
-            "google_count": len(google_df)
+            "message": f"Found {len(papers_list)} papers for '{topic}'",
+            "count": len(papers_list),
+            "topic": topic,
+            "papers": papers_list,
+            "sources": {
+                "semantic_scholar": len(semantic_df),
+                "google_scholar": len(google_df)
+            }
         }
         
     except Exception as e:
-        logging.error(f"Error in fetch_papers: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error fetching papers: {str(e)}")
+        logging.error(f"Error fetching papers: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail={
+                "error": "Failed to fetch papers",
+                "message": str(e)
+            }
+        )

@@ -6,6 +6,7 @@ import AuthPage from './pages/AuthPage';
 import MainLayout from './layouts/MainLayout';
 import AuthLayout from './layouts/AuthLayout';
 import AuthCallback from './pages/AuthCallBack';
+import Results from './pages/Results';
 
 
 function App() {
@@ -17,6 +18,7 @@ function App() {
         <Route element={<AuthLayout />}>
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/results" element={<Results />} />
 
         </Route>
       </Routes>

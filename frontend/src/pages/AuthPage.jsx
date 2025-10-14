@@ -203,29 +203,7 @@ const AuthPage = () => {
             >
               <FaGoogle className=" text-red-800 text-3xl" />
             </button>
-
-            {/* Facebook */}
-            <button
-              onClick={() => handleSocialLogin("Facebook")}
-              disabled={isLoading || authLoading}
-              className="w-14 h-14 flex items-center justify-center 
-                         bg-transparent transition-all disabled:opacity-50 
-                        animate-bounce delay-100"
-            >
-              <FaFacebookF className="text-blue-500 text-3xl" />
-            </button>
-
-            {/* Apple */}
-            <button
-              onClick={() => handleSocialLogin("Apple")}
-              disabled={isLoading || authLoading}
-              className="w-14 h-14 flex items-center justify-center 
-                         bg-transparent transition-all disabled:opacity-50 
-                        animate-bounce delay-100"
-            >
-              <FaApple className="text-4xl" />
-            </button>
-
+            
             {/* Github */}
             <button
               onClick={() => handleSocialLogin("Github")}

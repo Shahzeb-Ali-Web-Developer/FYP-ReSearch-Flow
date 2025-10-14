@@ -1,10 +1,31 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Search, BookOpen, Users } from 'lucide-react';
 import AnimatedNetworkBackground from "../components/AnimatedNetworkBackground";
 
-const SearchBar = () => {
+const SearchBar = ({ onSearch }) => {
   const [searchValue, setSearchValue] = useState('');
   const [isFocused, setIsFocused] = useState(false);
+
+  const handleSearch = () => {
+    if (searchValue.trim()) {
+      onSearch(searchValue.trim());
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
+  };
+
+  const suggestedTopics = [
+    'Machine Learning in Finance',
+    'Quantum Computing Applications',
+    'AI Ethics Research',
+    'Deep Learning in Healthcare',
+    'Natural Language Processing'
+  ];
 
   return (
     <div className="relative w-full max-w-4xl">
@@ -18,20 +39,35 @@ const SearchBar = () => {
           value={searchValue}
           onChange={(e) => setSearchValue(e.target.value)}
           onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
+          onBlur={() => setTimeout(() => setIsFocused(false), 200)}
+          onKeyPress={handleKeyPress}
           placeholder="e.g., Deep Learning in Healthcare"
           className="w-full px-6 py-4 bg-transparent text-white placeholder-gray-400 focus:outline-none text-lg"
         />
-        <button className="mr-2 p-3 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full hover:from-purple-700 hover:to-blue-700 transition-all duration-300 hover:scale-105">
+        <button 
+          onClick={handleSearch}
+          disabled={!searchValue.trim()}
+          className="mr-2 p-3 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full hover:from-purple-700 hover:to-blue-700 transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           <Search className="w-6 h-6 text-white" />
         </button>
       </div>
+      
       {isFocused && (
         <div className="absolute top-full left-0 right-0 mt-2 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 overflow-hidden z-10">
           <div className="p-2">
-            {['Machine Learning in Finance', 'Quantum Computing Applications', 'AI Ethics Research'].map((s, i) => (
-              <button key={i} className="w-full text-left px-4 py-3 text-white hover:bg-white/10 rounded-xl transition-colors" onClick={() => { setSearchValue(s); setIsFocused(false); }}>
-                {s}
+            <p className="px-4 py-2 text-gray-400 text-sm">Suggested Topics:</p>
+            {suggestedTopics.map((topic, i) => (
+              <button 
+                key={i} 
+                className="w-full text-left px-4 py-3 text-white hover:bg-white/10 rounded-xl transition-colors" 
+                onClick={() => {
+                  setSearchValue(topic);
+                  setIsFocused(false);
+                  setTimeout(() => onSearch(topic), 100);
+                }}
+              >
+                {topic}
               </button>
             ))}
           </div>
@@ -44,7 +80,7 @@ const SearchBar = () => {
 const FeatureCard = ({ icon: Icon, title, description }) => (
   <div className="group p-6 bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 hover:border-purple-400/50 transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/10">
     <div className="flex items-center mb-4">
-      <div className="p-3 bg-purple-600  rounded-full mr-4 group-hover:scale-110 transition-transform duration-300">
+      <div className="p-3 bg-purple-600 rounded-full mr-4 group-hover:scale-110 transition-transform duration-300">
         <Icon className="w-6 h-6 text-white" />
       </div>
       <h3 className="text-xl font-semibold text-white">{title}</h3>
@@ -54,17 +90,19 @@ const FeatureCard = ({ icon: Icon, title, description }) => (
 );
 
 export default function Home() {
-  
+  const navigate = useNavigate();
+
+  const handleSearch = (topic) => {
+    navigate(`/results?topic=${encodeURIComponent(topic)}`);
+  };
 
   return (
     <div className="min-h-screen relative viga-font overflow-hidden">
       <AnimatedNetworkBackground />
 
       <div className="relative z-10 min-h-screen flex flex-col">
-        
-
         <main className="flex-1 flex flex-col items-center justify-center px-6 text-center">
-          <div className="my-8 mx-auto ">
+          <div className="my-8 mx-auto">
             <h1 className="text-3xl lg:text-4xl text-white my-6 leading-tight">
               Find, Summarize &{' '}
               <span className="bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
@@ -78,7 +116,7 @@ export default function Home() {
             </p>
 
             <div className="mb-16 flex justify-center">
-              <SearchBar />
+              <SearchBar onSearch={handleSearch} />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-20">
@@ -97,9 +135,21 @@ export default function Home() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-              <FeatureCard icon={Search} title="Smart Search" description="AI-powered search across millions of research papers with semantic understanding and relevance ranking." />
-              <FeatureCard icon={BookOpen} title="Auto Summarization" description="Get key insights and summaries of complex research papers in seconds using advanced NLP." />
-              <FeatureCard icon={Users} title="Citation Networks" description="Visualize connections between papers, authors, and research topics with interactive graphs." />
+              <FeatureCard 
+                icon={Search} 
+                title="Smart Search" 
+                description="AI-powered search across millions of research papers with semantic understanding and relevance ranking." 
+              />
+              <FeatureCard 
+                icon={BookOpen} 
+                title="Auto Summarization" 
+                description="Get key insights and summaries of complex research papers in seconds using advanced NLP." 
+              />
+              <FeatureCard 
+                icon={Users} 
+                title="Citation Networks" 
+                description="Visualize connections between papers, authors, and research topics with interactive graphs." 
+              />
             </div>
           </div>
         </main>
@@ -115,8 +165,6 @@ export default function Home() {
           </div>
         </footer>
       </div>
-
-      
     </div>
   );
 }
