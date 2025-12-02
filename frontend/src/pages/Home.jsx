@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, BookOpen, Users } from 'lucide-react';
-import AnimatedNetworkBackground from "../components/AnimatedNetworkBackground";
 
 const SearchBar = ({ onSearch }) => {
   const [searchValue, setSearchValue] = useState('');
@@ -30,8 +29,8 @@ const SearchBar = ({ onSearch }) => {
   return (
     <div className="relative w-full max-w-4xl">
       <div
-        className={`relative flex items-center bg-white/10 backdrop-blur-md rounded-full border transition-all duration-300 ${
-          isFocused ? 'border-blue-400 shadow-lg shadow-purple-500/25' : 'border-white/20'
+        className={`relative flex items-center bg-white border-2 rounded-lg transition-all duration-300 ${
+          isFocused ? 'border-black shadow-lg' : 'border-gray-300'
         }`}
       >
         <input
@@ -42,25 +41,25 @@ const SearchBar = ({ onSearch }) => {
           onBlur={() => setTimeout(() => setIsFocused(false), 200)}
           onKeyPress={handleKeyPress}
           placeholder="e.g., Deep Learning in Healthcare"
-          className="w-full px-6 py-4 bg-transparent text-white placeholder-gray-400 focus:outline-none text-lg"
+          className="w-full px-6 py-4 bg-transparent text-black placeholder-gray-400 focus:outline-none text-lg"
         />
         <button 
           onClick={handleSearch}
           disabled={!searchValue.trim()}
-          className="mr-2 p-3 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full hover:from-purple-700 hover:to-blue-700 transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="mr-2 p-3 bg-black rounded-lg hover:bg-gray-800 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Search className="w-6 h-6 text-white" />
         </button>
       </div>
       
       {isFocused && (
-        <div className="absolute top-full left-0 right-0 mt-2 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 overflow-hidden z-10">
+        <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg border-2 border-gray-300 shadow-lg overflow-hidden z-10">
           <div className="p-2">
-            <p className="px-4 py-2 text-gray-400 text-sm">Suggested Topics:</p>
+            <p className="px-4 py-2 text-gray-500 text-sm">Suggested Topics:</p>
             {suggestedTopics.map((topic, i) => (
               <button 
                 key={i} 
-                className="w-full text-left px-4 py-3 text-white hover:bg-white/10 rounded-xl transition-colors" 
+                className="w-full text-left px-4 py-3 text-black hover:bg-gray-100 rounded-lg transition-colors" 
                 onClick={() => {
                   setSearchValue(topic);
                   setIsFocused(false);
@@ -78,14 +77,14 @@ const SearchBar = ({ onSearch }) => {
 };
 
 const FeatureCard = ({ icon: Icon, title, description }) => (
-  <div className="group p-6 bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 hover:border-purple-400/50 transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/10">
+  <div className="group p-6 bg-gray-50 rounded-lg border border-gray-300 hover:border-black transition-all duration-300 hover:shadow-lg">
     <div className="flex items-center mb-4">
-      <div className="p-3 bg-purple-600 rounded-full mr-4 group-hover:scale-110 transition-transform duration-300">
+      <div className="p-3 bg-black rounded-lg mr-4 group-hover:scale-110 transition-transform duration-300">
         <Icon className="w-6 h-6 text-white" />
       </div>
-      <h3 className="text-xl font-semibold text-white">{title}</h3>
+      <h3 className="text-xl font-semibold text-black">{title}</h3>
     </div>
-    <p className="text-gray-300 leading-relaxed">{description}</p>
+    <p className="text-gray-600 leading-relaxed">{description}</p>
   </div>
 );
 
@@ -97,21 +96,15 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen relative viga-font overflow-hidden">
-      <AnimatedNetworkBackground />
-
+    <div className="min-h-screen relative viga-font overflow-hidden bg-white">
       <div className="relative z-10 min-h-screen flex flex-col">
         <main className="flex-1 flex flex-col items-center justify-center px-6 text-center">
           <div className="my-8 mx-auto">
-            <h1 className="text-3xl lg:text-4xl text-white my-6 leading-tight">
-              Find, Summarize &{' '}
-              <span className="bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
-                Visualize
-              </span>{' '}
-              Research Papers Instantly
+            <h1 className="text-3xl lg:text-4xl text-black my-6 leading-tight">
+              Find, Summarize & Visualize Research Papers Instantly
             </h1>
 
-            <p className="text-xl text-gray-300 mb-12 mx-auto leading-relaxed">
+            <p className="text-xl text-gray-600 mb-12 mx-auto leading-relaxed">
               Enter a topic to get scholarly articles, summaries, and citation networks – all in one place
             </p>
 
@@ -121,16 +114,16 @@ export default function Home() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-20">
               <div className="text-center">
-                <div className="text-3xl font-bold text-purple-400 mb-2">10M+</div>
-                <div className="text-gray-400">Research Papers</div>
+                <div className="text-3xl font-bold text-black mb-2">10M+</div>
+                <div className="text-gray-600">Research Papers</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold text-blue-400 mb-2">500K+</div>
-                <div className="text-gray-400">Active Researchers</div>
+                <div className="text-3xl font-bold text-black mb-2">500K+</div>
+                <div className="text-gray-600">Active Researchers</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold text-green-400 mb-2">99.9%</div>
-                <div className="text-gray-400">Uptime</div>
+                <div className="text-3xl font-bold text-black mb-2">99.9%</div>
+                <div className="text-gray-600">Uptime</div>
               </div>
             </div>
 
@@ -154,16 +147,6 @@ export default function Home() {
           </div>
         </main>
 
-        <footer className="p-6 text-center text-gray-400">
-          <div className="flex flex-col md:flex-row items-center justify-between max-w-6xl mx-auto">
-            <p>&copy; 2024 ReSearch Flow. All rights reserved.</p>
-            <div className="flex items-center space-x-6 mt-4 md:mt-0">
-              <a href="#" className="hover:text-green-400 transition-colors">Privacy</a>
-              <a href="#" className="hover:text-green-400 transition-colors">Terms</a>
-              <a href="#" className="hover:text-green-400 transition-colors">Support</a>
-            </div>
-          </div>
-        </footer>
       </div>
     </div>
   );

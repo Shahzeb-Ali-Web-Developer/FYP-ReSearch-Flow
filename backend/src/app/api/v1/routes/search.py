@@ -1,9 +1,7 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
-from ....services.semantic_service import fetch_semantic_papers
-from ....services.serpapi_service import fetch_google_papers_serpapi
+from ....services.openalex_service import fetch_openalex_papers
 from ....utils.dedupe import clean_and_deduplicate
 from ....crud.papers_crud import store_to_supabase
-import pandas as pd
 import logging
 import asyncio
 
@@ -35,20 +33,18 @@ async def fetch_papers(
     background_tasks: BackgroundTasks = None
 ):
     """
-    Fetch research papers and return immediately while storing in background.
+    Fetch research papers from OpenAlex and return immediately while
+    optionally storing them in Supabase in the background.
     """
     try:
         logging.info(f"Starting fetch for topic: {topic}, limit: {limit}")
         
-        # Fetch from both sources
-        semantic_df = fetch_semantic_papers(topic, limit=limit, extract_content=extract_content)
-        logging.info(f"Semantic Scholar: {len(semantic_df)} papers")
-        
-        google_df = fetch_google_papers_serpapi(topic, limit=limit, extract_content=extract_content)
-        logging.info(f"Google Scholar: {len(google_df)} papers")
+        # Fetch from OpenAlex
+        openalex_df = fetch_openalex_papers(topic, limit=limit)
+        logging.info(f"OpenAlex: {len(openalex_df)} papers")
         
         # Check if no results
-        if semantic_df.empty and google_df.empty:
+        if openalex_df.empty:
             logging.warning(f"No results for: {topic}")
             return {
                 "status": "no_results",
@@ -56,10 +52,9 @@ async def fetch_papers(
                 "count": 0,
                 "papers": []
             }
-        
-        # Combine and clean
-        combined = pd.concat([semantic_df, google_df], ignore_index=True)
-        cleaned = clean_and_deduplicate(combined, topic)
+
+        # Clean (normalization + basic dedupe by title)
+        cleaned = clean_and_deduplicate(openalex_df, topic)
         
         # Convert to list of dicts for JSON
         papers_list = cleaned.to_dict('records')
@@ -78,8 +73,7 @@ async def fetch_papers(
             "topic": topic,
             "papers": papers_list,
             "sources": {
-                "semantic_scholar": len(semantic_df),
-                "google_scholar": len(google_df)
+                "openalex": len(openalex_df),
             }
         }
         

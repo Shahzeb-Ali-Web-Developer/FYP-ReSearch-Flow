@@ -88,10 +88,10 @@ export default function Navbar() {
   const NavButton = ({ children, primary = false, onClick }) => (
     <button
       onClick={onClick}
-      className={`px-6 py-2 rounded-full font-medium transition-all duration-100 ${
+      className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${
         primary
-          ? "bg-purple-500 text-white hover:bg-purple-700 shadow-lg hover:shadow-xl"
-          : "text-white hover:text-purple-300 hover:bg-white/10"
+          ? "bg-black text-white border-black hover:bg-gray-800"
+          : "text-gray-700 border-transparent hover:border-gray-300 hover:bg-gray-100"
       }`}
     >
       {children}
@@ -163,40 +163,43 @@ export default function Navbar() {
 
   if (loading) {
     return (
-      <div className="flex items-center bg-transparent justify-between p-6 lg:px-12">
-        <div className="flex items-center space-x-3">
-          <div className="w-12 h-12 flex items-center justify-center">
-            <img className="rounded-xl" src={researchLogo} alt="ReSearch Flow" />
+      <header className="border-b border-gray-200 bg-white">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="w-9 h-9 flex items-center justify-center">
+              <img className="rounded-lg" src={researchLogo} alt="ReSearch Flow" />
+            </div>
+            <div className="hidden md:block">
+              <h1 className="text-lg font-semibold text-black">ReSearch Flow</h1>
+              <p className="text-xs text-gray-500">AI Research Assistant</p>
+            </div>
           </div>
-          <div className="hidden md:block">
-            <h1 className="text-xl font-bold text-white">ReSearch Flow</h1>
-            <p className="text-sm text-gray-400">AI Research Assistant</p>
-          </div>
+          <div className="w-20 h-6 bg-gray-200 rounded-full animate-pulse"></div>
         </div>
-        <div className="w-24 h-10 bg-white/10 rounded-full animate-pulse"></div>
-      </div>
+      </header>
     );
   }
 
   return (
-    <div className="flex items-center bg-transparent justify-between p-6 lg:px-12">
+    <header className="border-b border-gray-200 bg-white">
+      <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
       <div className="flex items-center space-x-3">
-        <div className="w-12 h-12 flex items-center justify-center">
-          <img className="rounded-xl" src={researchLogo} alt="ReSearch Flow" />
+        <div className="w-9 h-9 flex items-center justify-center">
+          <img className="rounded-lg" src={researchLogo} alt="ReSearch Flow" />
         </div>
         <div className="hidden md:block">
-          <h1 className="text-xl font-bold text-white">ReSearch Flow</h1>
-          <p className="text-sm text-gray-400">AI Research Assistant</p>
+          <h1 className="text-lg font-semibold text-black">ReSearch Flow</h1>
+          <p className="text-xs text-gray-500">AI Research Assistant</p>
         </div>
       </div>
 
-      <nav className="hidden md:flex items-center space-x-2">
+      <nav className="hidden md:flex items-center space-x-2 text-sm">
         <NavButton>About</NavButton>
         <NavButton>Features</NavButton>
         <NavButton>Contact</NavButton>
       </nav>
 
-      <div className="hidden md:flex items-center space-x-3">
+      <div className="hidden md:flex items-center space-x-2">
         {isAuthenticated ? (
           <div className="relative">
             <UserAvatar
@@ -207,8 +210,13 @@ export default function Navbar() {
           </div>
         ) : (
           <>
-            <NavButton onClick={handleLogin}>Login</NavButton>
-            <NavButton primary onClick={handleSignUp}>Get Started</NavButton>
+            <button
+              onClick={handleLogin}
+              className="text-sm text-gray-700 hover:text-black"
+            >
+              Log in
+            </button>
+            <NavButton primary onClick={handleSignUp}>Sign up</NavButton>
           </>
         )}
       </div>
@@ -217,15 +225,15 @@ export default function Navbar() {
         <button
           ref={buttonRef}
           onClick={() => setVisible(!visible)}
-          className="z-20 p-3 bg-white/10 backdrop-blur-md rounded-full border border-white/20"
+          className="z-20 p-2 bg-white rounded-full border border-gray-300"
         >
-          <Menu className="w-4 h-4 text-white" />
+          <Menu className="w-4 h-4 text-gray-700" />
         </button>
 
         {visible && (
           <div
             ref={menuRef}
-            className="absolute right-0 mt-2 w-40 py-3 px-5 bg-slate-100 text-gray-700 rounded shadow-md flex flex-col gap-2 z-50"
+            className="absolute right-0 mt-2 w-40 py-3 px-5 bg-white text-gray-700 rounded shadow-md border border-gray-200 flex flex-col gap-2 z-50"
           >
             <NavLink to="/About" onClick={() => setVisible(false)}>
               About
@@ -245,18 +253,18 @@ export default function Navbar() {
                     handleLogin();
                     setVisible(false);
                   }}
-                  className="text-left text-gray-700 hover:text-purple-600"
+                  className="text-left text-gray-700 hover:text-black"
                 >
-                  Login
+                  Log in
                 </button>
                 <button
                   onClick={() => {
                     handleSignUp();
                     setVisible(false);
                   }}
-                  className="text-left text-purple-600 font-medium"
+                  className="mt-1 text-left text-black font-medium"
                 >
-                  Get Started
+                  Sign up
                 </button>
               </div>
             )}
@@ -264,5 +272,6 @@ export default function Navbar() {
         )}
       </div>
     </div>
+    </header>
   );
 }
