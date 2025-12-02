@@ -403,15 +403,15 @@ const DetailPanel = ({ paper, onClose }) => {
         <div>
           <span className="text-xs text-gray-500 uppercase">Language</span>
           <p className="text-black mt-1">English</p>
-        </div>
+      </div>
 
         <div className="grid grid-cols-2 gap-4">
           {referenceCount > 0 && (
             <div>
               <span className="text-xs text-gray-500 uppercase">Cites</span>
               <p className="text-black mt-1">{referenceCount.toLocaleString()}</p>
-            </div>
-          )}
+          </div>
+        )}
           {citationCount > 0 && (
             <div>
               <span className="text-xs text-gray-500 uppercase">Cited by</span>
@@ -703,7 +703,7 @@ export default function Results() {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const currentPapers = papers.slice(startIndex, endIndex);
-  
+
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
@@ -818,20 +818,20 @@ export default function Results() {
                       <Plus className="w-4 h-4" />
                     </button>
                     {filters.length > 1 && (
-                      <button
+            <button
                         onClick={() => removeFilter(filter.id)}
                         className="p-2 border border-gray-300 rounded hover:bg-gray-50"
-                      >
+            >
                         <Trash2 className="w-4 h-4 text-gray-600" />
-                      </button>
+            </button>
                     )}
                   </>
                 )}
               </React.Fragment>
             ))}
           </div>
+          </div>
         </div>
-      </div>
 
         {/* Main Content */}
       <div className="flex">
@@ -886,7 +886,7 @@ export default function Results() {
           )}
 
             {/* Results List */}
-            {!loading && !error && papers.length > 0 && (
+          {!loading && !error && papers.length > 0 && (
               <>
                 <div className="border-b border-gray-200">
                   {currentPapers.map((paper, index) => (
@@ -896,8 +896,8 @@ export default function Results() {
                       isSelected={selectedPaper && selectedPaper.paperId === paper.paperId}
                       onClick={() => setSelectedPaper(paper)}
                     />
-                  ))}
-                </div>
+              ))}
+            </div>
 
                 {/* Pagination */}
                 {totalPages > 1 && (
@@ -942,7 +942,7 @@ export default function Results() {
                 <p className="text-gray-600 text-lg">No papers found for this topic</p>
             </div>
           )}
-          </div>
+        </div>
         </div>
 
         {/* Right Column - Stats Panel */}
