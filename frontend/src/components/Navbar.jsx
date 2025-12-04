@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useNavigate, Link } from "react-router-dom";
 import researchLogo from "../assets/researchLogo.jpg";
-import { Menu, User, LogOut, Settings } from "lucide-react";
+import { Menu, LogOut, Bookmark } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext.jsx";
 
 export default function Navbar() {
@@ -52,13 +52,8 @@ export default function Navbar() {
     }
   };
 
-  const handleProfile = () => {
-    navigate("/profile");
-    setUserMenuVisible(false);
-  };
-
-  const handleSettings = () => {
-    navigate("/settings");
+  const handleSavedSearches = () => {
+    navigate("/saved-searches");
     setUserMenuVisible(false);
   };
 
@@ -102,20 +97,20 @@ export default function Navbar() {
     <button
       ref={userButtonRef}
       onClick={onClick}
-      className="flex items-center space-x-2 px-3 py-2 rounded-full bg-white/10 hover:bg-white/20 transition-all duration-200 border border-white/20"
+      className="flex items-center space-x-2 px-2 py-1.5 rounded-full hover:bg-gray-100 transition-all duration-200"
     >
-      <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+      <div className="w-10 h-10 bg-black rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
         {user?.user_metadata?.avatar_url ? (
           <img
             src={user.user_metadata.avatar_url}
             alt={getUserDisplayName(user)}
-            className="w-8 h-8 rounded-full object-cover"
+            className="w-10 h-10 rounded-full object-cover"
           />
         ) : (
           getUserInitials(user)
         )}
       </div>
-      <span className="text-white text-sm font-medium hidden sm:block">
+      <span className="text-gray-700 text-sm font-medium hidden sm:block max-w-[100px] truncate">
         {getUserDisplayName(user)}
       </span>
     </button>
@@ -124,32 +119,24 @@ export default function Navbar() {
   const UserMenu = () => (
     <div
       ref={userMenuRef}
-      className="absolute right-0 mt-2 w-48 py-2 bg-white rounded-lg shadow-lg border border-gray-200 z-50"
+      className="absolute right-0 mt-2 min-w-max py-2 bg-white rounded-lg shadow-lg border border-gray-200 z-50"
     >
       <div className="px-4 py-2 border-b border-gray-100">
-        <p className="text-sm font-medium text-gray-900">
+        <p className="text-sm font-medium text-gray-900 whitespace-nowrap">
           {getUserDisplayName(user)}
         </p>
-        <p className="text-sm text-gray-500">{user?.email}</p>
+        <p className="text-sm text-gray-500 whitespace-nowrap">{user?.email}</p>
       </div>
 
       <button
-        onClick={handleProfile}
+        onClick={handleSavedSearches}
         className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
       >
-        <User className="w-4 h-4" />
-        <span>Profile</span>
+        <Bookmark className="w-4 h-4" />
+        <span>Saved Searches</span>
       </button>
 
-      <button
-        onClick={handleSettings}
-        className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
-      >
-        <Settings className="w-4 h-4" />
-        <span>Settings</span>
-      </button>
-
-      <hr className="my-1" />
+      <hr className="my-1 border-gray-500"/>
 
       <button
         onClick={handleLogout}
@@ -163,7 +150,7 @@ export default function Navbar() {
 
   if (loading) {
     return (
-      <header className="border-b border-gray-200 bg-white">
+      <header className="border-b border-gray-200 bg-white relative z-50">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="w-9 h-9 flex items-center justify-center">
@@ -181,9 +168,9 @@ export default function Navbar() {
   }
 
   return (
-    <header className="border-b border-gray-200 bg-white">
+    <header className="border-b border-gray-200 bg-white relative z-50">
       <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-      <div className="flex items-center space-x-3">
+      <Link to="/" className="flex items-center space-x-3 hover:opacity-80 transition-opacity">
         <div className="w-9 h-9 flex items-center justify-center">
           <img className="rounded-lg" src={researchLogo} alt="ReSearch Flow" />
         </div>
@@ -191,15 +178,11 @@ export default function Navbar() {
           <h1 className="text-lg font-semibold text-black">ReSearch Flow</h1>
           <p className="text-xs text-gray-500">AI Research Assistant</p>
         </div>
-      </div>
+      </Link>
 
-      <nav className="hidden md:flex items-center space-x-2 text-sm">
-        <NavButton>About</NavButton>
-        <NavButton>Features</NavButton>
-        <NavButton>Contact</NavButton>
-      </nav>
+      
 
-      <div className="hidden md:flex items-center space-x-2">
+      <div className="flex items-center space-x-2">
         {isAuthenticated ? (
           <div className="relative">
             <UserAvatar
@@ -209,7 +192,7 @@ export default function Navbar() {
             {userMenuVisible && <UserMenu />}
           </div>
         ) : (
-          <>
+          <div className="space-x-6">
             <button
               onClick={handleLogin}
               className="text-sm text-gray-700 hover:text-black"
@@ -217,60 +200,11 @@ export default function Navbar() {
               Log in
             </button>
             <NavButton primary onClick={handleSignUp}>Sign up</NavButton>
-          </>
-        )}
-      </div>
-
-      <div className="relative md:hidden">
-        <button
-          ref={buttonRef}
-          onClick={() => setVisible(!visible)}
-          className="z-20 p-2 bg-white rounded-full border border-gray-300"
-        >
-          <Menu className="w-4 h-4 text-gray-700" />
-        </button>
-
-        {visible && (
-          <div
-            ref={menuRef}
-            className="absolute right-0 mt-2 w-40 py-3 px-5 bg-white text-gray-700 rounded shadow-md border border-gray-200 flex flex-col gap-2 z-50"
-          >
-            <NavLink to="/About" onClick={() => setVisible(false)}>
-              About
-            </NavLink>
-            <NavLink to="/Features" onClick={() => setVisible(false)}>
-              Features
-            </NavLink>
-            <NavLink to="/Contact" onClick={() => setVisible(false)}>
-              Contact
-            </NavLink>
-
-            {!isAuthenticated && (
-              <div>
-                <hr className="my-2" />
-                <button
-                  onClick={() => {
-                    handleLogin();
-                    setVisible(false);
-                  }}
-                  className="text-left text-gray-700 hover:text-black"
-                >
-                  Log in
-                </button>
-                <button
-                  onClick={() => {
-                    handleSignUp();
-                    setVisible(false);
-                  }}
-                  className="mt-1 text-left text-black font-medium"
-                >
-                  Sign up
-                </button>
-              </div>
-            )}
           </div>
         )}
       </div>
+
+      
     </div>
     </header>
   );

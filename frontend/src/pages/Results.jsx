@@ -2,11 +2,11 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { searchAPI, APIError } from '../services/api';
 import { 
-  ArrowLeft, ExternalLink, BookOpen, Calendar, Users, Award, X, FileText, 
-  Link as LinkIcon, MessageSquare, Code, Download, Search, ChevronDown, 
-  Plus, Trash2, MoreVertical, HelpCircle, LogIn, UserPlus, Menu,
-  Filter, BarChart3, CheckSquare, ChevronRight
+  BookOpen, X, FileText, Link as LinkIcon, MessageSquare, Code, Download, 
+  ChevronDown, Plus, Trash2, MoreVertical, ArrowUpDown, BarChart3, CheckSquare
 } from 'lucide-react';
+import SearchDropdown from '../components/SearchDropdown';
+import { supabase } from '../lib/supabase';
 
 // Compact paper card for the list (left column) - OpenAlex style
 const PaperListItem = ({ paper, isSelected, onClick }) => {
@@ -513,24 +513,138 @@ export default function Results() {
   const [selectedTopics, setSelectedTopics] = useState([]);
   const [selectedTypes, setSelectedTypes] = useState([]);
   const [openAccessOnly, setOpenAccessOnly] = useState(false);
+  const [fromCache, setFromCache] = useState(false);
+
+  // Check if papers exist in Supabase for this topic
+  const checkCache = async (query) => {
+    const normalizedQuery = query?.toLowerCase().trim() || '';
+    console.log('Checking Supabase for topic:', normalizedQuery);
+    
+    try {
+      const { data, error } = await supabase
+        .from('research_papers')
+        .select('*')
+        .eq('topic', normalizedQuery)
+        .limit(100);
+
+      if (error) {
+        console.log('Supabase lookup error:', error.message);
+        return null;
+      }
+      
+      if (!data || data.length === 0) {
+        console.log('No papers found in Supabase for this topic');
+        return null;
+      }
+
+      console.log('Found papers in Supabase:', data.length);
+      
+      // Map database columns back to expected paper format
+      const papers = data.map(row => ({
+        paperId: row.paperid,
+        title: row.title,
+        abstract: row.abstract,
+        authors: row.authors,
+        year: row.year,
+        venue: row.venue,
+        citationCount: row.citationcount,
+        referenceCount: row.referencecount,
+        url: row.url,
+        openAccessPdf: row.openaccesspdf,
+        isOpenAccess: row.isopenaccess,
+        fieldsOfStudy: row.fieldsofstudy,
+        publicationTypes: row.publicationtypes,
+        externalIds: row.externalids,
+        source: row.source
+      }));
+      
+      return { papers, results_count: papers.length };
+    } catch (err) {
+      console.log('Supabase unavailable:', err.message);
+      return null;
+    }
+  };
+
+  // Save papers to Supabase after fetching from API
+  const saveToCache = async (query, papers) => {
+    const normalizedQuery = query?.toLowerCase().trim() || '';
+    console.log('Saving papers to Supabase:', papers.length, 'for topic:', normalizedQuery);
+    
+    try {
+      // Map papers to match your table columns
+      const papersToSave = papers.map(paper => ({
+        paperid: paper.paperId || paper.id,
+        title: paper.title,
+        abstract: paper.abstract,
+        authors: paper.authors,
+        year: paper.year,
+        venue: paper.venue,
+        citationcount: paper.citationCount,
+        referencecount: paper.referenceCount,
+        url: paper.url,
+        openaccesspdf: paper.openAccessPdf,
+        isopenaccess: paper.isOpenAccess,
+        fieldsofstudy: paper.fieldsOfStudy,
+        publicationtypes: paper.publicationTypes,
+        externalids: paper.externalIds,
+        source: paper.source || 'OpenAlex',
+        topic: normalizedQuery,
+        inserted_at: new Date().toISOString()
+      }));
+
+      const { error } = await supabase
+        .from('research_papers')
+        .insert(papersToSave);
+      
+      if (error) {
+        console.log('Error saving to Supabase:', error.message);
+      } else {
+        console.log('Successfully saved', papers.length, 'papers to Supabase');
+      }
+    } catch (err) {
+      console.log('Save to Supabase failed:', err.message);
+    }
+  };
 
   const fetchPapers = async () => {
     setLoading(true);
     setError(null);
     setSelectedPaper(null);
+    setFromCache(false);
 
     try {
-      const response = await searchAPI.fetchPapers(topic, 100, false); // Fetch more for stats
+      // First, check if we have cached results
+      const cachedData = await checkCache(topic);
+      
+      if (cachedData && cachedData.papers && cachedData.papers.length > 0) {
+        console.log('Using cached results:', cachedData.papers.length, 'papers');
+        setAllPapers(cachedData.papers);
+        setPapers(cachedData.papers);
+        setStats({
+          total: cachedData.results_count,
+          sources: ['Cache']
+        });
+        setFromCache(true);
+        setLoading(false);
+        return;
+      }
+
+      // No cache, fetch from API
+      console.log('No cache found, fetching from API...');
+      const response = await searchAPI.fetchPapers(topic, 100, false);
       console.log('API Response:', response);
       
       if (response.status === 'success') {
         console.log('Papers received:', response.papers.length);
         setAllPapers(response.papers);
-        setPapers(response.papers); // Set initial papers
+        setPapers(response.papers);
         setStats({
           total: response.count,
           sources: response.sources
         });
+        
+        // Save to cache for future use
+        await saveToCache(topic, response.papers);
       } else if (response.status === 'no_results') {
         setError(response.message);
         setAllPapers([]);
@@ -660,6 +774,22 @@ export default function Results() {
       return;
     }
 
+    setSearchQuery(topic);
+    
+    // Update the filter input to match the new topic
+    setFilters(prevFilters => {
+      const titleFilter = prevFilters.find(f => f.field === 'title_abstract');
+      if (titleFilter) {
+        // Update existing title_abstract filter
+        return prevFilters.map(f => 
+          f.field === 'title_abstract' ? { ...f, value: topic } : f
+        );
+      } else {
+        // Add new title_abstract filter
+        return [createFilter('title_abstract', 'includes', topic), ...prevFilters];
+      }
+    });
+    
     fetchPapers();
   }, [topic]);
 
@@ -706,53 +836,15 @@ export default function Results() {
 
   return (
     <div className="min-h-screen bg-white">
-      {/* Header */}
-      <header className="border-b border-gray-200 bg-white">
-        <div className="max-w-7xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
-              <h1 className="text-xl font-bold text-black">ReSearch Flow</h1>
-              <div className="relative">
-                <button className="flex items-center gap-1 text-black hover:text-gray-700">
-                  Works <ChevronDown className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 max-w-2xl mx-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search OpenAlex"
-                  value={searchQuery}
-                  onChange={(e) => handleSearch(e.target.value)}
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter') {
-                      handleSearch(e.target.value);
-                    }
-                  }}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-black"
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <button className="p-2 hover:bg-gray-100 rounded">
-                <HelpCircle className="w-5 h-5 text-gray-600" />
-              </button>
-              <button className="px-4 py-2 text-black hover:text-gray-700">Log In</button>
-              <button className="px-4 py-2 bg-black text-white rounded hover:bg-gray-800">Sign Up</button>
-            </div>
-          </div>
-        </div>
-      </header>
-
       {/* Query Builder / Filter Area */}
       <div className="border-b border-gray-200 bg-white">
         <div className="max-w-7xl mx-auto px-4 py-3">
+          {/* Dropdown Row */}
           <div className="flex items-center gap-2 mb-2">
-            <select className="text-sm border border-gray-300 rounded px-3 py-1.5">
-              <option>Unsaved search</option>
-            </select>
+            <SearchDropdown 
+              topic={topic} 
+              searchQuery={searchQuery}
+            />
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {filters.map((filter, index) => (
@@ -843,7 +935,7 @@ export default function Results() {
               <h2 className="text-lg font-semibold text-black">Works</h2>
               <div className="flex items-center gap-2">
                 <button className="p-1.5 hover:bg-gray-100 rounded">
-                  <Menu className="w-4 h-4 text-gray-600" />
+                  <ArrowUpDown className="w-4 h-4 text-gray-600" />
                 </button>
                 <button className="p-1.5 hover:bg-gray-100 rounded">
                   <Download className="w-4 h-4 text-gray-600" />
