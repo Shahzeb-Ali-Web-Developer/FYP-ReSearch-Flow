@@ -550,11 +550,7 @@ export default function Results() {
       
       if (ageInDays > CACHE_MAX_AGE_DAYS) {
         console.log('Cache is stale (>', CACHE_MAX_AGE_DAYS, 'days), fetching fresh data');
-        // Delete old cached data for this topic
-        await supabase
-          .from('research_papers')
-          .delete()
-          .eq('topic', normalizedQuery);
+        // Keep old data, will add new data alongside it
         return null;
       }
 
