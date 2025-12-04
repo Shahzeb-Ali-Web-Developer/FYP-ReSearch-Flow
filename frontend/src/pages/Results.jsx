@@ -515,7 +515,9 @@ export default function Results() {
   const [openAccessOnly, setOpenAccessOnly] = useState(false);
   const [fromCache, setFromCache] = useState(false);
 
-  // Check if papers exist in Supabase for this topic
+  // Check if papers exist in Supabase for this topic (with 3-day freshness check)
+  const CACHE_MAX_AGE_DAYS = 3;
+  
   const checkCache = async (query) => {
     const normalizedQuery = query?.toLowerCase().trim() || '';
     console.log('Checking Supabase for topic:', normalizedQuery);
@@ -537,7 +539,26 @@ export default function Results() {
         return null;
       }
 
-      console.log('Found papers in Supabase:', data.length);
+      // Check freshness - use the most recent inserted_at
+      const mostRecent = data.reduce((latest, row) => {
+        const rowDate = new Date(row.inserted_at);
+        return rowDate > latest ? rowDate : latest;
+      }, new Date(0));
+      
+      const ageInDays = (Date.now() - mostRecent.getTime()) / (1000 * 60 * 60 * 24);
+      console.log('Cache age:', ageInDays.toFixed(1), 'days');
+      
+      if (ageInDays > CACHE_MAX_AGE_DAYS) {
+        console.log('Cache is stale (>', CACHE_MAX_AGE_DAYS, 'days), fetching fresh data');
+        // Delete old cached data for this topic
+        await supabase
+          .from('research_papers')
+          .delete()
+          .eq('topic', normalizedQuery);
+        return null;
+      }
+
+      console.log('Found fresh papers in Supabase:', data.length);
       
       // Map database columns back to expected paper format
       const papers = data.map(row => ({
