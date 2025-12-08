@@ -29,34 +29,55 @@ def _flatten_abstract(abstract_inverted_index: Dict[str, List[int]] | None) -> s
     return abstract.strip() or "N/A"
 
 
-def fetch_openalex_papers(topic: str, limit: int = 20) -> pd.DataFrame:
+def fetch_openalex_papers(topic: str, limit: int = 100) -> pd.DataFrame:
     """
     Fetch papers (works) from the OpenAlex API and normalize into a DataFrame
     compatible with the existing clean_and_deduplicate + Paper schema.
+    Supports pagination to fetch more than 50 results.
     """
     logging.info(f"Fetching OpenAlex works for topic: {topic}, limit: {limit}")
 
-    per_page = min(limit, 50)
+    per_page = 50  # OpenAlex max per page
     url = f"{OPENALEX_BASE_URL}/works"
-    params = {
-        "search": topic,
-        "per-page": per_page,
-        # Sort by relevance then citations to get useful results
-        "sort": "relevance_score:desc,cited_by_count:desc",
-    }
-
+    all_results: List[Dict[str, Any]] = []
+    
     try:
-        resp = requests.get(url, params=params, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        results: List[Dict[str, Any]] = data.get("results", [])
+        # Calculate number of pages needed
+        pages_needed = (limit + per_page - 1) // per_page
+        
+        for page in range(1, pages_needed + 1):
+            params = {
+                "search": topic,
+                "per-page": per_page,
+                "page": page,
+                # Sort by relevance then citations to get useful results
+                "sort": "relevance_score:desc,cited_by_count:desc",
+            }
+            
+            logging.info(f"Fetching page {page} of {pages_needed}...")
+            resp = requests.get(url, params=params, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            results: List[Dict[str, Any]] = data.get("results", [])
+            
+            if not results:
+                logging.info(f"No more results at page {page}")
+                break
+                
+            all_results.extend(results)
+            
+            # Stop if we have enough
+            if len(all_results) >= limit:
+                break
 
-        if not results:
+        if not all_results:
             logging.warning(f"No results from OpenAlex for topic: {topic}")
             return pd.DataFrame()
 
+        logging.info(f"Total results fetched: {len(all_results)}")
+        
         papers: List[Dict[str, Any]] = []
-        for w in results[:limit]:
+        for w in all_results[:limit]:
             abstract = _flatten_abstract(w.get("abstract_inverted_index"))
 
             # Authors

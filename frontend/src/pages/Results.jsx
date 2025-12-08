@@ -3,11 +3,15 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { searchAPI, APIError } from '../services/api';
 import { 
   BookOpen, X, FileText, Link as LinkIcon, MessageSquare, Code, Download, 
-  ChevronDown, Plus, Trash2, MoreVertical, ArrowUpDown, BarChart3, CheckSquare, Network
+  ChevronDown, Plus, Trash2, MoreVertical, ArrowUpDown, BarChart3, CheckSquare, Network,
+  Check
 } from 'lucide-react';
 import SearchDropdown from '../components/SearchDropdown';
 import CitationMesh from '../components/CitationMesh';
 import { supabase } from '../lib/supabase';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // Compact paper card for the list (left column) - OpenAlex style
 const PaperListItem = ({ paper, isSelected, onClick }) => {
@@ -500,6 +504,21 @@ export default function Results() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
 
+  // Sorting state
+  const [sortOption, setSortOption] = useState('relevance');
+  const [showSortDropdown, setShowSortDropdown] = useState(false);
+  
+  // Export dropdown state
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
+
+  // Sorting options configuration
+  const sortOptions = [
+    { value: 'relevance', label: 'Relevance' },
+    { value: 'citations', label: 'Citation Count' },
+    { value: 'title', label: 'Title' },
+    { value: 'year', label: 'Year' },
+  ];
+
   // Query builder state
   const [filters, setFilters] = useState(() => {
     const initialFilters = [];
@@ -681,6 +700,29 @@ export default function Results() {
     }
   };
 
+  // Sort papers function
+  const sortPapers = useCallback((papersToSort, sortBy) => {
+    const sorted = [...papersToSort];
+    
+    switch (sortBy) {
+      case 'citations':
+        sorted.sort((a, b) => (b.citationCount || 0) - (a.citationCount || 0));
+        break;
+      case 'year':
+        sorted.sort((a, b) => (b.year || 0) - (a.year || 0));
+        break;
+      case 'title':
+        sorted.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+        break;
+      case 'relevance':
+      default:
+        // Keep original order (API relevance)
+        break;
+    }
+    
+    return sorted;
+  }, []);
+
   const applyFilters = useCallback(() => {
     console.log('applyFilters called:', { allPapersCount: allPapers.length });
     
@@ -777,15 +819,20 @@ export default function Results() {
       allPapersCount: allPapers.length
     });
     
+    let result;
     if (!hasActiveFilters && !hasStatsFilters) {
       console.log('No active filters, showing all papers');
-      setPapers([...allPapers]);
+      result = [...allPapers];
     } else {
       console.log('Applying filters, showing', filtered.length, 'filtered papers');
-      setPapers(filtered);
+      result = filtered;
     }
+    
+    // Apply sorting
+    const sortedResult = sortPapers(result, sortOption);
+    setPapers(sortedResult);
     setCurrentPage(1); // Reset to first page when filters change
-  }, [allPapers, filters, selectedYears, selectedTopics, selectedTypes, openAccessOnly]);
+  }, [allPapers, filters, selectedYears, selectedTopics, selectedTypes, openAccessOnly, sortOption, sortPapers]);
 
   useEffect(() => {
     if (!topic) {
@@ -822,6 +869,20 @@ export default function Results() {
     }
   }, [filters, selectedYears, selectedTopics, selectedTypes, allPapers, applyFilters]);
 
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showSortDropdown && !event.target.closest('.sort-dropdown-container')) {
+        setShowSortDropdown(false);
+      }
+      if (showExportDropdown && !event.target.closest('.export-dropdown-container')) {
+        setShowExportDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showSortDropdown, showExportDropdown]);
+
   const addFilter = () => {
     setFilters([...filters, createFilter('title_abstract', 'includes', '')]);
   };
@@ -845,6 +906,177 @@ export default function Results() {
     } else {
       setFilters([createFilter('title_abstract', 'includes', query), ...filters]);
     }
+  };
+
+  // Export to Excel function
+  const exportToExcel = () => {
+    if (papers.length === 0) {
+      alert('No papers to export');
+      return;
+    }
+
+    // Prepare data for Excel - flatten the paper objects
+    const excelData = papers.map((paper, index) => ({
+      'S.No': index + 1,
+      'Title': paper.title || 'N/A',
+      'Authors': Array.isArray(paper.authors) 
+        ? paper.authors.map(a => typeof a === 'string' ? a : a.name || a).join('; ')
+        : 'N/A',
+      'Year': paper.year || 'N/A',
+      'Venue/Journal': paper.venue || 'N/A',
+      'Citation Count': paper.citationCount || 0,
+      'Reference Count': paper.referenceCount || 0,
+      'Abstract': paper.abstract || 'N/A',
+      'Fields of Study': Array.isArray(paper.fieldsOfStudy) 
+        ? paper.fieldsOfStudy.join('; ') 
+        : 'N/A',
+      'Publication Types': Array.isArray(paper.publicationTypes) 
+        ? paper.publicationTypes.join('; ') 
+        : 'N/A',
+      'DOI': paper.externalIds?.DOI || paper.externalIds?.doi || 'N/A',
+      'URL': paper.url || 'N/A',
+      'PDF URL': paper.openAccessPdf || 'N/A',
+      'Open Access': paper.isOpenAccess ? 'Yes' : 'No',
+      'Paper ID': paper.paperId || 'N/A',
+      'Source': paper.source || 'N/A'
+    }));
+
+    // Create workbook and worksheet
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(excelData);
+
+    // Set column widths for better readability
+    const columnWidths = [
+      { wch: 6 },   // S.No
+      { wch: 60 },  // Title
+      { wch: 40 },  // Authors
+      { wch: 8 },   // Year
+      { wch: 30 },  // Venue
+      { wch: 12 },  // Citation Count
+      { wch: 12 },  // Reference Count
+      { wch: 80 },  // Abstract
+      { wch: 30 },  // Fields of Study
+      { wch: 20 },  // Publication Types
+      { wch: 30 },  // DOI
+      { wch: 50 },  // URL
+      { wch: 50 },  // PDF URL
+      { wch: 12 },  // Open Access
+      { wch: 25 },  // Paper ID
+      { wch: 15 },  // Source
+    ];
+    worksheet['!cols'] = columnWidths;
+
+    // Add metadata sheet
+    const metadataSheet = XLSX.utils.json_to_sheet([
+      { 'Property': 'Search Query', 'Value': topic || 'N/A' },
+      { 'Property': 'Total Results', 'Value': papers.length },
+      { 'Property': 'Export Date', 'Value': new Date().toLocaleString() },
+      { 'Property': 'Open Access Papers', 'Value': papers.filter(p => p.isOpenAccess).length },
+      { 'Property': 'Average Citations', 'Value': Math.round(papers.reduce((sum, p) => sum + (p.citationCount || 0), 0) / papers.length) || 0 },
+      { 'Property': 'Year Range', 'Value': `${Math.min(...papers.filter(p => p.year).map(p => p.year))} - ${Math.max(...papers.filter(p => p.year).map(p => p.year))}` },
+      { 'Property': 'Current Sort', 'Value': sortOptions.find(o => o.value === sortOption)?.label || 'Default' },
+      { 'Property': 'Active Filters', 'Value': filters.length > 0 ? filters.map(f => `${f.field} ${f.operator} "${f.value}"`).join('; ') : 'None' },
+    ]);
+    metadataSheet['!cols'] = [{ wch: 20 }, { wch: 60 }];
+
+    // Add sheets to workbook
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Research Papers');
+    XLSX.utils.book_append_sheet(workbook, metadataSheet, 'Search Metadata');
+
+    // Generate filename with timestamp
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const sanitizedTopic = (topic || 'research').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30);
+    const filename = `${sanitizedTopic}_papers_${timestamp}.xlsx`;
+
+    // Export the file
+    XLSX.writeFile(workbook, filename);
+  };
+
+  // Export to PDF function
+  const exportToPDF = () => {
+    if (papers.length === 0) {
+      alert('No papers to export');
+      return;
+    }
+
+    // Create PDF document (landscape for more columns)
+    const doc = new jsPDF('landscape', 'mm', 'a4');
+    
+    // Add title
+    const sanitizedTopic = (topic || 'Research Papers').slice(0, 50);
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Research Papers: ${sanitizedTopic}`, 14, 15);
+    
+    // Add metadata
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100);
+    doc.text(`Generated: ${new Date().toLocaleString()} | Total: ${papers.length} papers | Open Access: ${papers.filter(p => p.isOpenAccess).length}`, 14, 22);
+    doc.setTextColor(0);
+
+    // Prepare table data
+    const tableData = papers.map((paper, index) => [
+      index + 1,
+      (paper.title || 'N/A').slice(0, 80) + ((paper.title?.length > 80) ? '...' : ''),
+      Array.isArray(paper.authors) 
+        ? paper.authors.slice(0, 3).map(a => typeof a === 'string' ? a : a.name || a).join(', ') + (paper.authors.length > 3 ? '...' : '')
+        : 'N/A',
+      paper.year || 'N/A',
+      paper.citationCount || 0,
+      paper.isOpenAccess ? 'Yes' : 'No',
+      (paper.venue || 'N/A').slice(0, 30) + ((paper.venue?.length > 30) ? '...' : ''),
+    ]);
+
+    // Create table
+    autoTable(doc, {
+      startY: 28,
+      head: [['#', 'Title', 'Authors', 'Year', 'Citations', 'Open Access', 'Venue']],
+      body: tableData,
+      headStyles: {
+        fillColor: [0, 0, 0],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 9,
+      },
+      bodyStyles: {
+        fontSize: 8,
+        cellPadding: 2,
+      },
+      columnStyles: {
+        0: { cellWidth: 10 },  // #
+        1: { cellWidth: 80 },  // Title
+        2: { cellWidth: 50 },  // Authors
+        3: { cellWidth: 15 },  // Year
+        4: { cellWidth: 18 },  // Citations
+        5: { cellWidth: 18 },  // Open Access
+        6: { cellWidth: 45 },  // Venue
+      },
+      alternateRowStyles: {
+        fillColor: [245, 245, 245],
+      },
+      margin: { top: 28 },
+      didDrawPage: (data) => {
+        // Add page number footer
+        const pageCount = doc.getNumberOfPages();
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        doc.text(
+          `Page ${data.pageNumber} of ${pageCount}`,
+          doc.internal.pageSize.width / 2,
+          doc.internal.pageSize.height - 10,
+          { align: 'center' }
+        );
+      },
+    });
+
+    // Generate filename
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const filenameTopic = (topic || 'research').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30);
+    const filename = `${filenameTopic}_papers_${timestamp}.pdf`;
+
+    // Save the PDF
+    doc.save(filename);
   };
 
   // Pagination
@@ -963,12 +1195,84 @@ export default function Results() {
                     Citation Mesh
                   </button>
                 )}
-                <button className="p-1.5 hover:bg-gray-100 rounded">
-                  <ArrowUpDown className="w-4 h-4 text-gray-600" />
-                </button>
-                <button className="p-1.5 hover:bg-gray-100 rounded">
-                  <Download className="w-4 h-4 text-gray-600" />
-                </button>
+                {/* Sort Dropdown */}
+                <div className="relative sort-dropdown-container">
+                  <button 
+                    onClick={() => setShowSortDropdown(!showSortDropdown)}
+                    className={`p-1.5 hover:bg-gray-100 rounded flex items-center gap-1 ${showSortDropdown ? 'bg-gray-100' : ''}`}
+                    title="Sort results"
+                  >
+                    <ArrowUpDown className="w-4 h-4 text-gray-600" />
+                    <ChevronDown className={`w-3 h-3 text-gray-600 transition-transform ${showSortDropdown ? 'rotate-180' : ''}`} />
+                  </button>
+                  
+                  {/* Dropdown Menu */}
+                  {showSortDropdown && (
+                    <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+                      <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase border-b border-gray-100">
+                        Sort by
+                      </div>
+                      {sortOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          onClick={() => {
+                            setSortOption(option.value);
+                            setShowSortDropdown(false);
+                          }}
+                          className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center justify-between ${
+                            sortOption === option.value ? 'bg-gray-50 text-black font-medium' : 'text-gray-700'
+                          }`}
+                        >
+                          <span>{option.label}</span>
+                          {sortOption === option.value && (
+                            <Check className="w-4 h-4 text-black" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                
+                {/* Export Dropdown */}
+                <div className="relative export-dropdown-container">
+                  <button 
+                    onClick={() => setShowExportDropdown(!showExportDropdown)}
+                    className={`p-1.5 hover:bg-gray-100 rounded flex items-center gap-1 ${showExportDropdown ? 'bg-gray-100' : ''}`}
+                    title="Export results"
+                  >
+                    <Download className="w-4 h-4 text-gray-600" />
+                    <ChevronDown className={`w-3 h-3 text-gray-600 transition-transform ${showExportDropdown ? 'rotate-180' : ''}`} />
+                  </button>
+                  
+                  {/* Export Dropdown Menu */}
+                  {showExportDropdown && (
+                    <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+                      <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase border-b border-gray-100">
+                        Export as
+                      </div>
+                      <button
+                        onClick={() => {
+                          exportToPDF();
+                          setShowExportDropdown(false);
+                        }}
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700"
+                      >
+                        <FileText className="w-4 h-4" />
+                        Download PDF
+                      </button>
+                      <button
+                        onClick={() => {
+                          exportToExcel();
+                          setShowExportDropdown(false);
+                        }}
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700"
+                      >
+                        <BarChart3 className="w-4 h-4" />
+                        Export to Excel
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <button className="p-1.5 hover:bg-gray-100 rounded">
                   <MoreVertical className="w-4 h-4 text-gray-600" />
                 </button>

@@ -17,7 +17,7 @@ ReSearch Flow allows users to:
 - 📋 Generate AI-based summaries of articles - Planned
 - 📋 Identify research trends and common techniques - Planned
 - 📋 Auto-generate structured drafts (Introduction, Literature Review, Methodology) - Planned
-- 📋 Save sessions and export findings in multiple formats - Planned
+- ✅ Save sessions and export findings in multiple formats - Planned
 
 ## Key Features
 
@@ -29,12 +29,12 @@ ReSearch Flow allows users to:
 | 4 | Paper Detail View | ✅ Implemented | Interactive slide-in panel showing complete paper details including full abstract, authors, citations, DOI, and links. |
 | 5 | Statistics Dashboard | ✅ Implemented | Real-time statistics panel showing result counts, year distribution, topic distribution, and open access percentage. |
 | 6 | Database Integration | ✅ Implemented | Automatic background storage of search results to Supabase PostgreSQL database with batch processing and retry logic. |
-| 7 | Authentication System | 🔄 In Progress | Supabase Auth integration with email/password and OAuth providers (Google). Context and pages implemented. |
+| 7 | Authentication System | ✅ Implemented | Supabase Auth integration with email/password and OAuth providers (Google). Context and pages implemented. |
 | 8 | Citation Mesh Visualization | ✅ Implemented | Interactive graph showing how papers are connected through citations using Cytoscape.js with circular/clustered layouts. |
 | 9 | AI Summary Generation | 📋 Planned | Generates concise summaries (150–200 words) for each paper using LLMs (GPT, BART, PEGASUS). |
 | 10 | Trend & Technique Analysis | 📋 Planned | Identifies frequently used keywords, methods, and algorithms across research papers. |
 | 11 | AI Draft Assistant | 📋 Planned | Creates structured drafts for paper sections (Introduction, Literature Review, Methodology). |
-| 12 | Save & Export Workspace | 📋 Planned | Save bookmarks, notes, and export as PDF/DOCX/Reference List (BibTeX, APA format). |
+| 12 | Save & Export Workspace | ✅ Implemented | Save bookmarks, notes, and export as PDF/DOCX/Reference List (BibTeX, APA format). |
 
 ## System Architecture
 
