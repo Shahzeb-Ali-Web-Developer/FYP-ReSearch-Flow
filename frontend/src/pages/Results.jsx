@@ -3,9 +3,10 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { searchAPI, APIError } from '../services/api';
 import { 
   BookOpen, X, FileText, Link as LinkIcon, MessageSquare, Code, Download, 
-  ChevronDown, Plus, Trash2, MoreVertical, ArrowUpDown, BarChart3, CheckSquare
+  ChevronDown, Plus, Trash2, MoreVertical, ArrowUpDown, BarChart3, CheckSquare, Network
 } from 'lucide-react';
 import SearchDropdown from '../components/SearchDropdown';
+import CitationMesh from '../components/CitationMesh';
 import { supabase } from '../lib/supabase';
 
 // Compact paper card for the list (left column) - OpenAlex style
@@ -495,6 +496,7 @@ export default function Results() {
   const [stats, setStats] = useState(null);
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [showStatsPanel, setShowStatsPanel] = useState(true);
+  const [showCitationMesh, setShowCitationMesh] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
 
@@ -951,6 +953,16 @@ export default function Results() {
             <div className="border-b border-gray-200 p-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-black">Works</h2>
               <div className="flex items-center gap-2">
+                {papers.length > 0 && (
+                  <button
+                    onClick={() => setShowCitationMesh(true)}
+                    className="px-3 py-1.5 bg-black text-white rounded text-sm hover:bg-gray-800 transition-colors flex items-center gap-2"
+                    title="View Citation Network"
+                  >
+                    <Network className="w-4 h-4" />
+                    Citation Mesh
+                  </button>
+                )}
                 <button className="p-1.5 hover:bg-gray-100 rounded">
                   <ArrowUpDown className="w-4 h-4 text-gray-600" />
                 </button>
@@ -1078,6 +1090,24 @@ export default function Results() {
               onClick={() => setSelectedPaper(null)}
             ></div>
           </>
+        )}
+
+        {/* Citation Mesh Overlay */}
+        {showCitationMesh && (
+          <CitationMesh
+            papers={allPapers}
+            onClose={() => setShowCitationMesh(false)}
+            onNodeClick={(nodeData) => {
+              // Find the paper in allPapers and show its details
+              const paper = allPapers.find(p => 
+                (p.paperId || p.id) === nodeData.paperId
+              );
+              if (paper) {
+                setSelectedPaper(paper);
+                setShowCitationMesh(false);
+              }
+            }}
+          />
         )}
       </div>
     </div>

@@ -11,8 +11,8 @@ def clean_and_deduplicate(df, topic):
     # Define expected columns
     expected_cols = [
         'paperId', 'title', 'abstract', 'authors', 'url', 'year', 'venue',
-        'publicationTypes', 'citationCount', 'referenceCount', 'isOpenAccess',
-        'openAccessPdf', 'externalIds', 'fieldsOfStudy', 'source', 'topic', 'content'
+        'publicationTypes', 'citationCount', 'referenceCount', 'referencedWorks',
+        'isOpenAccess', 'openAccessPdf', 'externalIds', 'fieldsOfStudy', 'source', 'topic', 'content'
     ]
     
     for col in expected_cols:
@@ -31,6 +31,7 @@ def clean_and_deduplicate(df, topic):
     df['authors'] = df['authors'].apply(lambda x: x if isinstance(x, list) else [])
     df['publicationTypes'] = df['publicationTypes'].apply(lambda x: x if isinstance(x, list) else [])
     df['fieldsOfStudy'] = df['fieldsOfStudy'].apply(lambda x: x if isinstance(x, list) else [])
+    df['referencedWorks'] = df['referencedWorks'].apply(lambda x: x if isinstance(x, list) else [])
     df['externalIds'] = df['externalIds'].apply(lambda x: x if isinstance(x, dict) else {})
 
     # Handle numeric fields

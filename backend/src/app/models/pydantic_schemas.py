@@ -12,6 +12,7 @@ class Paper(BaseModel):
     publicationTypes: List[str] = []
     citationCount: Optional[int]
     referenceCount: Optional[int]
+    referencedWorks: List[str] = []  # OpenAlex IDs of papers this paper references
     isOpenAccess: Optional[bool]
     openAccessPdf: Optional[str]
     externalIds: Dict = {}

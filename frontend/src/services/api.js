@@ -100,6 +100,44 @@ export const searchAPI = {
       if (error instanceof APIError) throw error;
       throw new APIError('Network error', 0, { originalError: error.message });
     }
+  },
+
+  /**
+   * Get citation network for papers
+   * @param {Array} papers - Array of paper objects
+   * @param {number} maxDepth - Maximum depth of citation exploration (default: 1)
+   * @param {number} maxNodes - Maximum number of nodes (default: 50)
+   * @returns {Promise<Object>} Citation network with nodes and edges
+   */
+  async getCitationNetwork(papers, maxDepth = 1, maxNodes = 50) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/citation/network`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          papers: papers,
+          max_depth: maxDepth,
+          max_nodes: maxNodes,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to build citation network',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) throw error;
+      throw new APIError('Network error', 0, { originalError: error.message });
+    }
   }
 };
 

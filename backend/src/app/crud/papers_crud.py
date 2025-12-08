@@ -60,6 +60,16 @@ def store_to_supabase(df, topic):
             elif not isinstance(fieldsofstudy, list):
                 fieldsofstudy = []
             
+            # Handle referencedWorks (list of OpenAlex IDs)
+            referencedworks = row.get("referencedworks", [])
+            if isinstance(referencedworks, str):
+                try:
+                    referencedworks = json.loads(referencedworks)
+                except:
+                    referencedworks = [referencedworks] if referencedworks else []
+            elif not isinstance(referencedworks, list):
+                referencedworks = []
+            
             record = {
                 "paperid": row.get("paperid"),
                 "title": row.get("title", "N/A"),
@@ -71,6 +81,7 @@ def store_to_supabase(df, topic):
                 "publicationtypes": publicationtypes,
                 "citationcount": int(row.get("citationcount", 0)) if pd.notna(row.get("citationcount")) else 0,
                 "referencecount": int(row.get("referencecount", 0)) if pd.notna(row.get("referencecount")) else 0,
+                "referencedworks": referencedworks,  # JSON array of OpenAlex IDs
                 "isopenaccess": bool(row.get("isopenaccess", False)),
                 "openaccesspdf": row.get("openaccesspdf"),
                 "externalids": externalids,

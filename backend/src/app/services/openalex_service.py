@@ -88,6 +88,8 @@ def fetch_openalex_papers(topic: str, limit: int = 20) -> pd.DataFrame:
             fields_of_study = [c.get("display_name", "") for c in concepts if c.get("display_name")]
 
             referenced_works = w.get("referenced_works") or []
+            # Also get cited_by (papers that cite this paper) for bidirectional graph
+            cited_by_works = w.get("cited_by_api_url")  # URL to fetch citing papers
 
             paper = {
                 "paperId": w.get("id"),
@@ -100,6 +102,7 @@ def fetch_openalex_papers(topic: str, limit: int = 20) -> pd.DataFrame:
                 "publicationTypes": [],  # OpenAlex doesn't directly expose this like Semantic Scholar
                 "citationCount": w.get("cited_by_count", 0),
                 "referenceCount": len(referenced_works),
+                "referencedWorks": referenced_works,  # List of OpenAlex IDs this paper references
                 "isOpenAccess": bool(oa_info.get("is_oa", False)),
                 "openAccessPdf": oa_url,
                 "externalIds": external_ids,
