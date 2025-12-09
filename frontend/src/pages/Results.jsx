@@ -1,13 +1,16 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { searchAPI, APIError } from '../services/api';
+import { searchAPI, savedArticlesAPI, APIError } from '../services/api';
 import { 
-  BookOpen, X, FileText, Link as LinkIcon, MessageSquare, Code, Download, 
+  BookOpen, X, FileText, MessageSquare, Code, Download, 
   ChevronDown, Plus, Trash2, MoreVertical, ArrowUpDown, BarChart3, CheckSquare, Network,
-  Check
+  Check, Bookmark, Share2, Copy, CheckCircle, Building2
 } from 'lucide-react';
 import SearchDropdown from '../components/SearchDropdown';
 import CitationMesh from '../components/CitationMesh';
+import ArticleNotesModal from '../components/ArticleNotesModal';
+import { ToastContainer, useToast } from '../components/Toast';
+import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -71,54 +74,85 @@ const StatsPanel = ({
   setSelectedTopics,
   selectedTypes,
   setSelectedTypes,
+  selectedInstitutions,
+  setSelectedInstitutions,
   openAccessOnly,
   onToggleOpenAccess,
 }) => {
   const [expandedSections, setExpandedSections] = useState({
     year: true,
     topic: false,
-    institution: false,
+    institution: true,  // Expanded by default
     type: true
   });
 
-  // Calculate stats from papers
-  const openAccessCount = papers.filter(p => p.isOpenAccess).length;
-  const openAccessPercent = papers.length > 0 ? Math.round((openAccessCount / papers.length) * 100) : 0;
-  
-  // Group by year
-  const yearDistribution = {};
-  papers.forEach(p => {
-    if (p.year) {
-      yearDistribution[p.year] = (yearDistribution[p.year] || 0) + 1;
-    }
-  });
-  const sortedYears = Object.keys(yearDistribution).sort((a, b) => b - a).slice(0, 10);
-  const maxYearCount = Math.max(...Object.values(yearDistribution), 1);
+  // Memoize stats calculations - only recalculate when papers change
+  const { openAccessCount, openAccessPercent, sortedYears, maxYearCount, yearDistribution, sortedTopics, sortedInstitutions, sortedTypes } = useMemo(() => {
+    // Calculate stats from papers
+    const openAccessCount = papers.filter(p => p.isOpenAccess).length;
+    const openAccessPercent = papers.length > 0 ? Math.round((openAccessCount / papers.length) * 100) : 0;
+    
+    // Group by year
+    const yearDistribution = {};
+    papers.forEach(p => {
+      if (p.year) {
+        yearDistribution[p.year] = (yearDistribution[p.year] || 0) + 1;
+      }
+    });
+    const sortedYears = Object.keys(yearDistribution).sort((a, b) => b - a).slice(0, 10);
+    const maxYearCount = Math.max(...Object.values(yearDistribution), 1);
 
-  // Group by fields of study
-  const topicCounts = {};
-  papers.forEach(p => {
-    if (Array.isArray(p.fieldsOfStudy)) {
-      p.fieldsOfStudy.forEach(field => {
-        topicCounts[field] = (topicCounts[field] || 0) + 1;
-      });
-    }
-  });
-  const sortedTopics = Object.entries(topicCounts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10);
+    // Group by fields of study
+    const topicCounts = {};
+    papers.forEach(p => {
+      if (Array.isArray(p.fieldsOfStudy)) {
+        p.fieldsOfStudy.forEach(field => {
+          topicCounts[field] = (topicCounts[field] || 0) + 1;
+        });
+      }
+    });
+    const sortedTopics = Object.entries(topicCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
 
-  // Group by type
-  const typeCounts = {};
-  papers.forEach(p => {
-    const type = p.publicationTypes && p.publicationTypes.length > 0 
-      ? p.publicationTypes[0] 
-      : 'article';
-    typeCounts[type] = (typeCounts[type] || 0) + 1;
-  });
-  const sortedTypes = Object.entries(typeCounts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10);
+    // Group by institutions - optimized for instant loading
+    const institutionCounts = {};
+    papers.forEach(p => {
+      if (Array.isArray(p.institutions)) {
+        p.institutions.forEach(inst => {
+          if (inst && inst.trim()) {
+            institutionCounts[inst] = (institutionCounts[inst] || 0) + 1;
+          }
+        });
+      }
+    });
+    const sortedInstitutions = Object.entries(institutionCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
+
+    // Group by type
+    const typeCounts = {};
+    papers.forEach(p => {
+      const type = p.publicationTypes && p.publicationTypes.length > 0 
+        ? p.publicationTypes[0] 
+        : 'article';
+      typeCounts[type] = (typeCounts[type] || 0) + 1;
+    });
+    const sortedTypes = Object.entries(typeCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
+
+    return {
+      openAccessCount,
+      openAccessPercent,
+      sortedYears,
+      maxYearCount,
+      yearDistribution,
+      sortedTopics,
+      sortedInstitutions,
+      sortedTypes
+    };
+  }, [papers]);
 
   const toggleSection = (section) => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
@@ -225,6 +259,55 @@ const StatsPanel = ({
           )}
         </div>
 
+        {/* Institution */}
+        <div className="border-b border-gray-200 pb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-gray-600" />
+              <span className="text-sm font-medium text-black">Institution</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button className="p-1 hover:bg-gray-100 rounded">
+                <MoreVertical className="w-4 h-4 text-gray-600" />
+              </button>
+              <button onClick={() => toggleSection('institution')}>
+                <X className="w-4 h-4 text-gray-600" />
+              </button>
+            </div>
+          </div>
+          {expandedSections.institution && (
+            <div className="space-y-1">
+              {sortedInstitutions.length > 0 ? (
+                <>
+                  {sortedInstitutions.map(([institution, count]) => (
+                    <label key={institution} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
+                      <input
+                        type="checkbox"
+                        checked={selectedInstitutions.includes(institution)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedInstitutions([...selectedInstitutions, institution]);
+                          } else {
+                            setSelectedInstitutions(selectedInstitutions.filter(i => i !== institution));
+                          }
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                      <span className="text-sm text-gray-700 flex-1">{institution}</span>
+                      <span className="text-sm text-gray-500">{count.toLocaleString()}</span>
+                    </label>
+                  ))}
+                  {sortedInstitutions.length >= 10 && (
+                    <button className="text-xs text-gray-500 hover:text-black mt-2">More...</button>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-gray-500 py-2">No institution data available</p>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Type */}
         <div className="border-b border-gray-200 pb-4">
           <div className="flex items-center justify-between mb-3">
@@ -273,6 +356,10 @@ const StatsPanel = ({
 const DetailPanel = ({ paper, onClose }) => {
   if (!paper) return null;
 
+  const { user, isAuthenticated } = useAuth();
+  const { toasts, showToast, removeToast } = useToast();
+  const navigate = useNavigate();
+
   const authors = Array.isArray(paper.authors) ? paper.authors : [];
   const venue = paper.venue && paper.venue !== 'N/A' ? paper.venue : null;
   const year = paper.year || null;
@@ -285,8 +372,172 @@ const DetailPanel = ({ paper, onClose }) => {
   const isOpenAccess = Boolean(paper.isOpenAccess);
   const [abstractExpanded, setAbstractExpanded] = useState(false);
 
+  // State for saved articles functionality
+  const [isSaved, setIsSaved] = useState(false);
+  const [savedArticleId, setSavedArticleId] = useState(null);
+  const [notes, setNotes] = useState('');
+  const [showNotesModal, setShowNotesModal] = useState(false);
+  const [showLinkDropdown, setShowLinkDropdown] = useState(false);
+  const [copiedToClipboard, setCopiedToClipboard] = useState(false);
+  const [loadingSaved, setLoadingSaved] = useState(true);
+
   const abstract = paper.abstract && paper.abstract !== 'N/A' ? paper.abstract : null;
   const abstractPreview = abstract && abstract.length > 300 ? abstract.substring(0, 300) + '...' : abstract;
+
+  const paperId = paper.paperId || paper.id;
+
+  // Check if article is saved when component mounts or paper changes
+  useEffect(() => {
+    const checkSavedStatus = async () => {
+      if (!isAuthenticated || !paperId) {
+        setLoadingSaved(false);
+        return;
+      }
+
+      try {
+        const savedArticle = await savedArticlesAPI.getSavedArticle(paperId);
+        if (savedArticle) {
+          setIsSaved(true);
+          setSavedArticleId(savedArticle.id);
+          setNotes(savedArticle.notes || '');
+        } else {
+          setIsSaved(false);
+          setSavedArticleId(null);
+          setNotes('');
+        }
+      } catch (error) {
+        console.error('Error checking saved status:', error);
+      } finally {
+        setLoadingSaved(false);
+      }
+    };
+
+    checkSavedStatus();
+  }, [paperId, isAuthenticated]);
+
+  // Close link dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showLinkDropdown && !event.target.closest('.link-dropdown-container')) {
+        setShowLinkDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showLinkDropdown]);
+
+  // API Button Handler - Copy JSON to clipboard
+  const handleCopyJSON = async () => {
+    try {
+      const jsonData = JSON.stringify(paper, null, 2);
+      await navigator.clipboard.writeText(jsonData);
+      showToast('Paper data copied to clipboard as JSON', 'success');
+    } catch (error) {
+      console.error('Error copying to clipboard:', error);
+      showToast('Failed to copy to clipboard', 'error');
+    }
+  };
+
+  // Link Button Handlers
+  const handleCopyURL = async () => {
+    const urlToCopy = htmlUrl || paper.url || window.location.href;
+    try {
+      await navigator.clipboard.writeText(urlToCopy);
+      setCopiedToClipboard(true);
+      showToast('URL copied to clipboard', 'success');
+      setTimeout(() => setCopiedToClipboard(false), 2000);
+      setShowLinkDropdown(false);
+    } catch (error) {
+      console.error('Error copying URL:', error);
+      showToast('Failed to copy URL', 'error');
+    }
+  };
+
+  const handleShare = async () => {
+    const shareData = {
+      title: paper.title || 'Research Paper',
+      text: paper.abstract ? paper.abstract.substring(0, 200) : '',
+      url: htmlUrl || paper.url || window.location.href,
+    };
+
+    try {
+      if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+        await navigator.share(shareData);
+        showToast('Article shared successfully', 'success');
+      } else {
+        // Fallback to copy URL
+        await handleCopyURL();
+      }
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        console.error('Error sharing:', error);
+        // Fallback to copy URL
+        await handleCopyURL();
+      }
+    }
+    setShowLinkDropdown(false);
+  };
+
+  // Message/Save Button Handlers
+  const handleSaveArticle = async () => {
+    if (!isAuthenticated) {
+      showToast('Please log in to save articles', 'info');
+      navigate('/auth?mode=login');
+      return;
+    }
+
+    try {
+      if (isSaved) {
+        await savedArticlesAPI.unsaveArticle(paperId);
+        setIsSaved(false);
+        setSavedArticleId(null);
+        setNotes('');
+        showToast('Article removed from saved', 'success');
+      } else {
+        const savedArticle = await savedArticlesAPI.saveArticle(paperId, paper);
+        setIsSaved(true);
+        setSavedArticleId(savedArticle.id);
+        showToast('Article saved to favorites', 'success');
+      }
+    } catch (error) {
+      console.error('Error saving article:', error);
+      if (error instanceof APIError && error.status === 401) {
+        showToast('Please log in to save articles', 'info');
+        navigate('/auth?mode=login');
+      } else {
+        showToast('Failed to save article', 'error');
+      }
+    }
+  };
+
+  const handleOpenNotes = () => {
+    if (!isAuthenticated) {
+      showToast('Please log in to add notes', 'info');
+      navigate('/auth?mode=login');
+      return;
+    }
+
+    // If not saved, save it first
+    if (!isSaved) {
+      handleSaveArticle().then(() => {
+        setShowNotesModal(true);
+      });
+    } else {
+      setShowNotesModal(true);
+    }
+  };
+
+  const handleSaveNotes = async (newNotes) => {
+    try {
+      await savedArticlesAPI.updateArticleNotes(paperId, newNotes);
+      setNotes(newNotes);
+      showToast('Notes saved successfully', 'success');
+    } catch (error) {
+      console.error('Error saving notes:', error);
+      showToast('Failed to save notes', 'error');
+      throw error;
+    }
+  };
 
   return (
     <div className="fixed inset-y-0 right-0 w-full md:w-[600px] bg-white border-l border-gray-200 z-50 overflow-y-auto shadow-2xl">
@@ -333,16 +584,79 @@ const DetailPanel = ({ paper, onClose }) => {
             PDF
           </a>
         )}
-        <button className="px-4 py-2 bg-black hover:bg-gray-800 text-white rounded text-sm flex items-center gap-2 transition-colors">
+        <button
+          onClick={handleCopyJSON}
+          className="px-4 py-2 bg-black hover:bg-gray-800 text-white rounded text-sm flex items-center gap-2 transition-colors"
+          title="Copy paper data as JSON"
+        >
           <Code className="w-4 h-4" />
-          API
+          JSON
         </button>
-        <button className="px-4 py-2 bg-black hover:bg-gray-800 text-white rounded text-sm flex items-center gap-2 transition-colors">
-          <LinkIcon className="w-4 h-4" />
+        <div className="relative link-dropdown-container">
+          <button
+            onClick={() => setShowLinkDropdown(!showLinkDropdown)}
+            className={`px-4 py-2 bg-black hover:bg-gray-800 text-white rounded text-sm flex items-center gap-2 transition-colors ${showLinkDropdown ? 'bg-gray-800' : ''}`}
+            title="Copy URL or Share"
+          >
+            {copiedToClipboard ? (
+              <CheckCircle className="w-4 h-4" />
+            ) : (
+              <Share2 className="w-4 h-4" />
+            )}
+            <span>Share</span>
+            <ChevronDown className={`w-3 h-3 transition-transform ${showLinkDropdown ? 'rotate-180' : ''}`} />
+          </button>
+          {showLinkDropdown && (
+            <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+              <button
+                onClick={handleCopyURL}
+                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700"
+              >
+                <Copy className="w-4 h-4" />
+                Copy URL
+              </button>
+              <button
+                onClick={handleShare}
+                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700"
+              >
+                <Share2 className="w-4 h-4" />
+                Share
+              </button>
+            </div>
+          )}
+        </div>
+        <button
+          onClick={isSaved ? handleOpenNotes : handleSaveArticle}
+          className={`px-4 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
+            isSaved
+              ? 'bg-gray-100 hover:bg-gray-200 text-black border border-gray-300'
+              : 'bg-black hover:bg-gray-800 text-white'
+          }`}
+          title={isSaved ? 'View/Edit Notes' : 'Save Article'}
+          disabled={loadingSaved}
+        >
+          {isSaved ? (
+            <>
+              <Bookmark className="w-4 h-4 fill-current" />
+              <span>Saved</span>
+            </>
+          ) : (
+            <>
+              <Bookmark className="w-4 h-4" />
+              <span>Save</span>
+            </>
+          )}
         </button>
-        <button className="px-4 py-2 bg-black hover:bg-gray-800 text-white rounded text-sm flex items-center gap-2 transition-colors">
-          <MessageSquare className="w-4 h-4" />
-        </button>
+        {isSaved && notes && (
+          <button
+            onClick={handleOpenNotes}
+            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-black rounded text-sm flex items-center gap-2 transition-colors border border-gray-300"
+            title="View Notes"
+          >
+            <FileText className="w-4 h-4" />
+            Notes
+          </button>
+        )}
       </div>
 
       {/* Metadata */}
@@ -476,6 +790,18 @@ const DetailPanel = ({ paper, onClose }) => {
           </div>
         )}
       </div>
+
+      {/* Toast Container */}
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
+
+      {/* Notes Modal */}
+      <ArticleNotesModal
+        isOpen={showNotesModal}
+        onClose={() => setShowNotesModal(false)}
+        paper={paper}
+        notes={notes}
+        onSave={handleSaveNotes}
+      />
     </div>
   );
 };
@@ -533,6 +859,7 @@ export default function Results() {
   const [selectedYears, setSelectedYears] = useState([]);
   const [selectedTopics, setSelectedTopics] = useState([]);
   const [selectedTypes, setSelectedTypes] = useState([]);
+  const [selectedInstitutions, setSelectedInstitutions] = useState([]);
   const [openAccessOnly, setOpenAccessOnly] = useState(false);
   const [fromCache, setFromCache] = useState(false);
 
@@ -592,6 +919,7 @@ export default function Results() {
         isOpenAccess: row.isopenaccess,
         fieldsOfStudy: row.fieldsofstudy,
         publicationTypes: row.publicationtypes,
+        institutions: row.institutions || [],  // Handle institutions field
         externalIds: row.externalids,
         source: row.source
       }));
@@ -624,6 +952,7 @@ export default function Results() {
         isopenaccess: paper.isOpenAccess,
         fieldsofstudy: paper.fieldsOfStudy,
         publicationtypes: paper.publicationTypes,
+        institutions: paper.institutions || [],  // Include institutions field
         externalids: paper.externalIds,
         source: paper.source || 'OpenAlex',
         topic: normalizedQuery,
@@ -805,13 +1134,20 @@ export default function Results() {
       });
     }
 
+    if (selectedInstitutions.length > 0) {
+      filtered = filtered.filter(p => 
+        p.institutions && Array.isArray(p.institutions) && 
+        p.institutions.some(inst => selectedInstitutions.includes(inst))
+      );
+    }
+
     if (openAccessOnly) {
       filtered = filtered.filter(p => p.isOpenAccess === true);
     }
 
     // If no active filters at all, show all papers
     const hasStatsFilters =
-      openAccessOnly || selectedYears.length > 0 || selectedTopics.length > 0 || selectedTypes.length > 0;
+      openAccessOnly || selectedYears.length > 0 || selectedTopics.length > 0 || selectedTypes.length > 0 || selectedInstitutions.length > 0;
     console.log('Filter result:', { 
       hasActiveFilters, 
       hasStatsFilters, 
@@ -832,7 +1168,7 @@ export default function Results() {
     const sortedResult = sortPapers(result, sortOption);
     setPapers(sortedResult);
     setCurrentPage(1); // Reset to first page when filters change
-  }, [allPapers, filters, selectedYears, selectedTopics, selectedTypes, openAccessOnly, sortOption, sortPapers]);
+  }, [allPapers, filters, selectedYears, selectedTopics, selectedTypes, selectedInstitutions, openAccessOnly, sortOption, sortPapers]);
 
   useEffect(() => {
     if (!topic) {
@@ -867,7 +1203,7 @@ export default function Results() {
       // If no papers, ensure papers state is empty
       setPapers([]);
     }
-  }, [filters, selectedYears, selectedTopics, selectedTypes, allPapers, applyFilters]);
+  }, [filters, selectedYears, selectedTopics, selectedTypes, selectedInstitutions, openAccessOnly, allPapers, applyFilters]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -1382,6 +1718,10 @@ export default function Results() {
             setSelectedTopics={setSelectedTopics}
             selectedTypes={selectedTypes}
             setSelectedTypes={setSelectedTypes}
+            selectedInstitutions={selectedInstitutions}
+            setSelectedInstitutions={setSelectedInstitutions}
+            openAccessOnly={openAccessOnly}
+            onToggleOpenAccess={() => setOpenAccessOnly(!openAccessOnly)}
           />
         )}
 
