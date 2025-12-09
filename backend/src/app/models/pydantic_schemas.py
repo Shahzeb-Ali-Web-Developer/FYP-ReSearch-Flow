@@ -17,6 +17,7 @@ class Paper(BaseModel):
     openAccessPdf: Optional[str]
     externalIds: Dict = {}
     fieldsOfStudy: List[str] = []
+    institutions: List[str] = []  # List of institution names associated with authors
     source: Optional[str]
     topic: Optional[str]
     content: Optional[str]
