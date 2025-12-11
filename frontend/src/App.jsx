@@ -6,6 +6,8 @@ import AuthLayout from './layouts/AuthLayout';
 import AuthCallback from './pages/AuthCallBack';
 import Results from './pages/Results';
 import SavedSearches from './pages/SavedSearches';
+import Pricing from './pages/Pricing';
+import Payment from './pages/Payment';
 
 
 function App() {
@@ -18,6 +20,8 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/results" element={<Results />} />
           <Route path="/saved-searches" element={<SavedSearches />} />
+          <Route path="/pricing" element={<Pricing />} />
+          <Route path="/payment" element={<Payment />} />
         </Route>
         
         {/* Auth pages without Navbar */}

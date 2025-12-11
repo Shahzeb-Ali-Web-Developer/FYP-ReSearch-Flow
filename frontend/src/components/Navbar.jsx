@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from "react";
 import { NavLink, useNavigate, Link } from "react-router-dom";
 import researchLogo from "../assets/researchLogo.jpg";
-import { Menu, LogOut, Bookmark } from "lucide-react";
+import { Menu, LogOut, Bookmark, Crown, ArrowUpRight } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext.jsx";
 
 export default function Navbar() {
   const [visible, setVisible] = useState(false);
   const [userMenuVisible, setUserMenuVisible] = useState(false);
   const { user, isAuthenticated, signOut, loading } = useAuth();
+  const userPlan = (user?.user_metadata?.plan || "basic").toLowerCase();
 
   const menuRef = useRef(null);
   const buttonRef = useRef(null);
@@ -55,6 +56,13 @@ export default function Navbar() {
   const handleSavedSearches = () => {
     navigate("/saved-searches");
     setUserMenuVisible(false);
+  };
+
+  const handlePricing = () => navigate("/pricing");
+
+  const handleUpgrade = () => {
+    setUserMenuVisible(false);
+    navigate("/pricing");
   };
 
   const getUserInitials = (user) => {
@@ -126,6 +134,19 @@ export default function Navbar() {
           {getUserDisplayName(user)}
         </p>
         <p className="text-sm text-gray-500 whitespace-nowrap">{user?.email}</p>
+        <div className="mt-2 flex items-center gap-2">
+          <span className="text-xs text-gray-600 whitespace-nowrap">
+            Current plan: {userPlan.charAt(0).toUpperCase() + userPlan.slice(1)}
+          </span>
+          {["basic", "premium"].includes(userPlan) && (
+            <button
+              onClick={handleUpgrade}
+              className="text-xs px-2 py-1 border border-green-500 text-green-600 rounded-full hover:bg-green-50 transition-colors"
+            >
+              Upgrade
+            </button>
+          )}
+        </div>
       </div>
 
       <button
@@ -183,6 +204,13 @@ export default function Navbar() {
       
 
       <div className="flex items-center space-x-2">
+        <button
+          onClick={handlePricing}
+          className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 hover:text-black rounded-full border border-transparent hover:border-gray-300 hover:bg-gray-100 transition-colors"
+        >
+          <Crown className="w-4 h-4" />
+          Pricing
+        </button>
         {isAuthenticated ? (
           <div className="relative">
             <UserAvatar
