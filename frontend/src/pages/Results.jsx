@@ -1029,26 +1029,36 @@ export default function Results() {
     }
   };
 
-  // Sort papers function
+  // Sort papers function (priority: open access + has PDF to the top)
   const sortPapers = useCallback((papersToSort, sortBy) => {
     const sorted = [...papersToSort];
-    
-    switch (sortBy) {
-      case 'citations':
-        sorted.sort((a, b) => (b.citationCount || 0) - (a.citationCount || 0));
-        break;
-      case 'year':
-        sorted.sort((a, b) => (b.year || 0) - (a.year || 0));
-        break;
-      case 'title':
-        sorted.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-        break;
-      case 'relevance':
-      default:
-        // Keep original order (API relevance)
-        break;
-    }
-    
+
+    const getPriority = (p) => {
+      const hasPdf =
+        Boolean(p.openAccessPdf) ||
+        (p.url && typeof p.url === 'string' && p.url.toLowerCase().endsWith('.pdf'));
+      const isOA = Boolean(p.isOpenAccess);
+      // Priority 2: OA + PDF, 1: either, 0: neither
+      return (isOA ? 1 : 0) + (hasPdf ? 1 : 0);
+    };
+
+    sorted.sort((a, b) => {
+      const priorityDiff = getPriority(b) - getPriority(a);
+      if (priorityDiff !== 0) return priorityDiff;
+
+      switch (sortBy) {
+        case 'citations':
+          return (b.citationCount || 0) - (a.citationCount || 0);
+        case 'year':
+          return (b.year || 0) - (a.year || 0);
+        case 'title':
+          return (a.title || '').localeCompare(b.title || '');
+        case 'relevance':
+        default:
+          return 0; // keep original order when equal priority
+      }
+    });
+
     return sorted;
   }, []);
 
