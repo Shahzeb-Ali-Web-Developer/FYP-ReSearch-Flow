@@ -55,7 +55,7 @@ const plans = [
 
 export default function Pricing() {
   const navigate = useNavigate();
-  const [selectedPlan, setSelectedPlan] = useState("basic");
+  const [selectedPlan, setSelectedPlan] = useState("premium");
 
   const goToPayment = (planValue) => {
     if (planValue === "basic") {
