@@ -2,6 +2,7 @@ fastapi
 uvicorn
 requests
 pdfplumber
+PyMuPDF
 pandas
 python-dotenv
 supabase

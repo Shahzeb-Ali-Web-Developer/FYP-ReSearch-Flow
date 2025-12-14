@@ -291,4 +291,948 @@ export const savedArticlesAPI = {
   }
 };
 
+// arXiv API functions
+export const arxivAPI = {
+  /**
+   * Search arXiv for papers
+   * @param {string} query - Search query/topic
+   * @param {number} limit - Number of results (default: 20)
+   * @returns {Promise<Object>} Response with papers array
+   */
+  async searchPapers(query, limit = 20) {
+    try {
+      const url = new URL(`${API_BASE_URL}/arxiv/search`);
+      url.searchParams.append('query', query);
+      url.searchParams.append('limit', limit);
+
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to search arXiv',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      
+      throw new APIError(
+        'Network error: Could not connect to server',
+        0,
+        { originalError: error.message }
+      );
+    }
+  },
+
+  /**
+   * Extract full PDF content from arXiv
+   * @param {string} arxivId - arXiv ID (e.g., "1234.5678") OR pdfUrl
+   * @param {string} pdfUrl - Optional PDF URL (alternative to arxivId)
+   * @returns {Promise<Object>} Full extracted text from PDF
+   */
+  async extractPdfContent(arxivId = null, pdfUrl = null) {
+    try {
+      const requestBody = {};
+      if (arxivId) {
+        requestBody.arxiv_id = arxivId;
+      } else if (pdfUrl) {
+        requestBody.pdf_url = pdfUrl;
+      } else {
+        throw new APIError('Either arxivId or pdfUrl must be provided', 400);
+      }
+
+      const response = await fetch(`${API_BASE_URL}/arxiv/extract`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to extract PDF content',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      
+      throw new APIError(
+        'Network error: Could not connect to server',
+        0,
+        { originalError: error.message }
+      );
+    }
+  },
+
+  /**
+   * Summarize a paper from arXiv
+   * @param {string} arxivId - arXiv ID (e.g., "1234.5678") OR pdfUrl
+   * @param {string} pdfUrl - Optional PDF URL (alternative to arxivId)
+   * @returns {Promise<Object>} Summary with structured sections
+   */
+  async summarizePaper(arxivId = null, pdfUrl = null) {
+    try {
+      const requestBody = {};
+      if (arxivId) {
+        requestBody.arxiv_id = arxivId;
+      } else if (pdfUrl) {
+        requestBody.pdf_url = pdfUrl;
+      } else {
+        throw new APIError('Either arxivId or pdfUrl must be provided', 400);
+      }
+
+      const response = await fetch(`${API_BASE_URL}/arxiv/summarize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to summarize paper',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      
+      throw new APIError(
+        'Network error: Could not connect to server',
+        0,
+        { originalError: error.message }
+      );
+    }
+  },
+
+  /**
+   * Ask a question about a paper
+   * @param {string} arxivId - arXiv ID (e.g., "1234.5678") OR pdfUrl
+   * @param {string} pdfUrl - Optional PDF URL (alternative to arxivId)
+   * @param {string} question - Question to ask about the paper
+   * @param {Array} conversationHistory - Optional conversation history
+   * @returns {Promise<Object>} Answer to the question
+   */
+  async askQuestion(arxivId = null, pdfUrl = null, question = "", conversationHistory = []) {
+    try {
+      const requestBody = {};
+      if (arxivId) {
+        requestBody.arxiv_id = arxivId;
+      } else if (pdfUrl) {
+        requestBody.pdf_url = pdfUrl;
+      } else {
+        throw new APIError('Either arxivId or pdfUrl must be provided', 400);
+      }
+      
+      requestBody.question = question;
+      if (conversationHistory && conversationHistory.length > 0) {
+        requestBody.conversation_history = conversationHistory;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/arxiv/ask`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to get answer',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      
+      throw new APIError(
+        'Network error: Could not connect to server',
+        0,
+        { originalError: error.message }
+      );
+    }
+  }
+};
+
+// CORE API functions
+export const coreAPI = {
+  /**
+   * Search CORE for papers
+   * @param {string} query - Search query/topic
+   * @param {number} limit - Number of results (default: 20)
+   * @returns {Promise<Object>} Response with papers array
+   */
+  async searchPapers(query, limit = 20) {
+    try {
+      const url = new URL(`${API_BASE_URL}/core/search`);
+      url.searchParams.append('query', query);
+      url.searchParams.append('limit', limit);
+
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to search CORE',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      
+      throw new APIError(
+        'Network error: Could not connect to server',
+        0,
+        { originalError: error.message }
+      );
+    }
+  },
+
+  /**
+   * Extract full PDF content from CORE paper
+   * @param {string} pdfUrl - PDF URL
+   * @returns {Promise<Object>} Full extracted text from PDF
+   */
+  async extractPdfContent(pdfUrl) {
+    try {
+      if (!pdfUrl) {
+        throw new APIError('pdfUrl must be provided', 400);
+      }
+
+      const response = await fetch(`${API_BASE_URL}/core/extract`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ pdf_url: pdfUrl }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to extract PDF content',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      
+      throw new APIError(
+        'Network error: Could not connect to server',
+        0,
+        { originalError: error.message }
+      );
+    }
+  },
+
+  /**
+   * Summarize a paper from CORE
+   * @param {string} pdfUrl - PDF URL
+   * @returns {Promise<Object>} Summary with structured sections
+   */
+  async summarizePaper(pdfUrl) {
+    try {
+      if (!pdfUrl) {
+        throw new APIError('pdfUrl must be provided', 400);
+      }
+
+      const response = await fetch(`${API_BASE_URL}/core/summarize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ pdf_url: pdfUrl }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to summarize paper',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      
+      throw new APIError(
+        'Network error: Could not connect to server',
+        0,
+        { originalError: error.message }
+      );
+    }
+  },
+
+  /**
+   * Ask a question about a CORE paper
+   * @param {string} pdfUrl - PDF URL
+   * @param {string} question - Question to ask about the paper
+   * @param {Array} conversationHistory - Optional conversation history
+   * @returns {Promise<Object>} Answer to the question
+   */
+  async askQuestion(pdfUrl, question = "", conversationHistory = []) {
+    try {
+      if (!pdfUrl) {
+        throw new APIError('pdfUrl must be provided', 400);
+      }
+      
+      const requestBody = {
+        pdf_url: pdfUrl,
+        question: question
+      };
+      
+      if (conversationHistory && conversationHistory.length > 0) {
+        requestBody.conversation_history = conversationHistory;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/core/ask`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to get answer',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      
+      throw new APIError(
+        'Network error: Could not connect to server',
+        0,
+        { originalError: error.message }
+      );
+    }
+  }
+};
+
+// PubMed Central (PMC) API functions
+export const pmcAPI = {
+  /**
+   * Search PMC for papers
+   * @param {string} query - Search query/topic
+   * @param {number} limit - Number of results (default: 20)
+   * @returns {Promise<Object>} Response with papers array
+   */
+  async searchPapers(query, limit = 20) {
+    try {
+      const url = new URL(`${API_BASE_URL}/pmc/search`);
+      url.searchParams.append('query', query);
+      url.searchParams.append('limit', limit);
+
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to search PMC',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      
+      throw new APIError(
+        'Network error: Could not connect to server',
+        0,
+        { originalError: error.message }
+      );
+    }
+  },
+
+  /**
+   * Extract full PDF content from PMC paper
+   * @param {string} pdfUrl - PDF URL
+   * @returns {Promise<Object>} Full extracted text from PDF
+   */
+  async extractPdfContent(pdfUrl) {
+    try {
+      if (!pdfUrl) {
+        throw new APIError('pdfUrl must be provided', 400);
+      }
+
+      const response = await fetch(`${API_BASE_URL}/pmc/extract`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ pdf_url: pdfUrl }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to extract PDF content',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      
+      throw new APIError(
+        'Network error: Could not connect to server',
+        0,
+        { originalError: error.message }
+      );
+    }
+  },
+
+  /**
+   * Summarize a paper from PMC
+   * @param {string} pdfUrl - PDF URL
+   * @returns {Promise<Object>} Summary with structured sections
+   */
+  async summarizePaper(pdfUrl) {
+    try {
+      if (!pdfUrl) {
+        throw new APIError('pdfUrl must be provided', 400);
+      }
+
+      const response = await fetch(`${API_BASE_URL}/pmc/summarize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ pdf_url: pdfUrl }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to summarize paper',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      
+      throw new APIError(
+        'Network error: Could not connect to server',
+        0,
+        { originalError: error.message }
+      );
+    }
+  },
+
+  /**
+   * Ask a question about a PMC paper
+   * @param {string} pdfUrl - PDF URL
+   * @param {string} question - Question to ask about the paper
+   * @param {Array} conversationHistory - Optional conversation history
+   * @returns {Promise<Object>} Answer to the question
+   */
+  async askQuestion(pdfUrl, question = "", conversationHistory = []) {
+    try {
+      if (!pdfUrl) {
+        throw new APIError('pdfUrl must be provided', 400);
+      }
+      
+      const requestBody = {
+        pdf_url: pdfUrl,
+        question: question
+      };
+      
+      if (conversationHistory && conversationHistory.length > 0) {
+        requestBody.conversation_history = conversationHistory;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/pmc/ask`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to get answer',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      
+      throw new APIError(
+        'Network error: Could not connect to server',
+        0,
+        { originalError: error.message }
+      );
+    }
+  }
+};
+
+// Semantic Scholar API functions
+export const semanticScholarAPI = {
+  /**
+   * Search Semantic Scholar for papers
+   * @param {string} query - Search query/topic
+   * @param {number} limit - Number of results (default: 20)
+   * @returns {Promise<Object>} Response with papers array
+   */
+  async searchPapers(query, limit = 20) {
+    try {
+      const url = new URL(`${API_BASE_URL}/semantic-scholar/search`);
+      url.searchParams.append('query', query);
+      url.searchParams.append('limit', limit);
+
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to search Semantic Scholar',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      
+      throw new APIError(
+        'Network error: Could not connect to server',
+        0,
+        { originalError: error.message }
+      );
+    }
+  },
+
+  /**
+   * Extract full PDF content from any paper (works with any source)
+   * @param {string} pdfUrl - PDF URL
+   * @returns {Promise<Object>} Full extracted text from PDF
+   */
+  async extractPdfContent(pdfUrl) {
+    try {
+      if (!pdfUrl) {
+        throw new APIError('pdfUrl must be provided', 400);
+      }
+
+      const response = await fetch(`${API_BASE_URL}/semantic-scholar/extract`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ pdf_url: pdfUrl }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to extract PDF content',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      
+      throw new APIError(
+        'Network error: Could not connect to server',
+        0,
+        { originalError: error.message }
+      );
+    }
+  },
+
+  /**
+   * Summarize a paper from any source (works with any PDF URL)
+   * @param {string} pdfUrl - PDF URL
+   * @returns {Promise<Object>} Summary with structured sections
+   */
+  async summarizePaper(pdfUrl) {
+    try {
+      if (!pdfUrl) {
+        throw new APIError('pdfUrl must be provided', 400);
+      }
+
+      const response = await fetch(`${API_BASE_URL}/semantic-scholar/summarize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ pdf_url: pdfUrl }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to summarize paper',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      
+      throw new APIError(
+        'Network error: Could not connect to server',
+        0,
+        { originalError: error.message }
+      );
+    }
+  },
+
+  /**
+   * Ask a question about a paper from any source
+   * @param {string} pdfUrl - PDF URL
+   * @param {string} question - Question to ask about the paper
+   * @param {Array} conversationHistory - Optional conversation history
+   * @returns {Promise<Object>} Answer to the question
+   */
+  async askQuestion(pdfUrl, question = "", conversationHistory = []) {
+    try {
+      if (!pdfUrl) {
+        throw new APIError('pdfUrl must be provided', 400);
+      }
+      
+      const requestBody = {
+        pdf_url: pdfUrl,
+        question: question
+      };
+      
+      if (conversationHistory && conversationHistory.length > 0) {
+        requestBody.conversation_history = conversationHistory;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/semantic-scholar/ask`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to get answer',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      
+      throw new APIError(
+        'Network error: Could not connect to server',
+        0,
+        { originalError: error.message }
+      );
+    }
+  }
+};
+
+// Google Scholar API functions (using SerpAPI)
+export const googleScholarAPI = {
+  /**
+   * Search Google Scholar for papers
+   * @param {string} query - Search query/topic
+   * @param {number} limit - Number of results (default: 20)
+   * @returns {Promise<Object>} Response with papers array
+   */
+  async searchPapers(query, limit = 20) {
+    try {
+      const url = new URL(`${API_BASE_URL}/google-scholar/search`);
+      url.searchParams.append('query', query);
+      url.searchParams.append('limit', limit);
+
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to search Google Scholar',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      
+      throw new APIError(
+        'Network error: Could not connect to server',
+        0,
+        { originalError: error.message }
+      );
+    }
+  },
+
+  /**
+   * Extract full PDF content from any paper (works with any source)
+   * @param {string} pdfUrl - PDF URL
+   * @returns {Promise<Object>} Full extracted text from PDF
+   */
+  async extractPdfContent(pdfUrl) {
+    try {
+      if (!pdfUrl) {
+        throw new APIError('pdfUrl must be provided', 400);
+      }
+
+      const response = await fetch(`${API_BASE_URL}/google-scholar/extract`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ pdf_url: pdfUrl }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to extract PDF content',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      
+      throw new APIError(
+        'Network error: Could not connect to server',
+        0,
+        { originalError: error.message }
+      );
+    }
+  },
+
+  /**
+   * Summarize a paper from any source (works with any PDF URL)
+   * @param {string} pdfUrl - PDF URL
+   * @returns {Promise<Object>} Summary with structured sections
+   */
+  async summarizePaper(pdfUrl) {
+    try {
+      if (!pdfUrl) {
+        throw new APIError('pdfUrl must be provided', 400);
+      }
+
+      const response = await fetch(`${API_BASE_URL}/google-scholar/summarize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ pdf_url: pdfUrl }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to summarize paper',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      
+      throw new APIError(
+        'Network error: Could not connect to server',
+        0,
+        { originalError: error.message }
+      );
+    }
+  },
+
+  /**
+   * Ask a question about a paper from any source
+   * @param {string} pdfUrl - PDF URL
+   * @param {string} question - Question to ask about the paper
+   * @param {Array} conversationHistory - Optional conversation history
+   * @returns {Promise<Object>} Answer to the question
+   */
+  async askQuestion(pdfUrl, question = "", conversationHistory = []) {
+    try {
+      if (!pdfUrl) {
+        throw new APIError('pdfUrl must be provided', 400);
+      }
+      
+      const requestBody = {
+        pdf_url: pdfUrl,
+        question: question
+      };
+      
+      if (conversationHistory && conversationHistory.length > 0) {
+        requestBody.conversation_history = conversationHistory;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/google-scholar/ask`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to get answer',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      
+      throw new APIError(
+        'Network error: Could not connect to server',
+        0,
+        { originalError: error.message }
+      );
+    }
+  }
+};
+
 export { APIError };
