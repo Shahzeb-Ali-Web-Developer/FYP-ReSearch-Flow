@@ -10,6 +10,12 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = ""
     CORE_API_KEY: Optional[str] = None
     SERPAPI_API_KEY: Optional[str] = None
+    
+    # Neo4j Configuration
+    NEO4J_URI: str = "bolt://localhost:7687"
+    NEO4J_USER: str = "neo4j"
+    NEO4J_PASSWORD: str = "password"
+    NEO4J_DATABASE: str = "neo4j"
 
     model_config = SettingsConfigDict(
         env_file=str(BASE_DIR / ".env"),

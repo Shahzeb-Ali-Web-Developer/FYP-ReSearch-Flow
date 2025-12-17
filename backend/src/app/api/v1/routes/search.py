@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from ....services.openalex_service import fetch_openalex_papers
+from ....services.neo4j_citation_service import neo4j_citation_service
 from ....utils.dedupe import clean_and_deduplicate
 from ....crud.papers_crud import store_to_supabase
 import logging
@@ -8,10 +9,10 @@ import asyncio
 router = APIRouter()
 
 async def store_papers_background(cleaned_df, topic):
-    """Background task to store papers in Supabase"""
+    """Background task to store papers in Supabase AND Neo4j"""
     try:
         if not cleaned_df.empty:
-            # Run in executor to prevent blocking
+            # Store in Supabase
             loop = asyncio.get_event_loop()
             inserted = await loop.run_in_executor(
                 None, 
@@ -19,11 +20,44 @@ async def store_papers_background(cleaned_df, topic):
                 cleaned_df, 
                 topic
             )
-            logging.info(f"Background storage complete: {inserted} papers for '{topic}'")
-            print(f"✓ Background storage complete: {inserted} papers saved to database")
+            logging.info(f"Supabase: Stored {inserted} papers for '{topic}'")
+            print(f"[OK] Supabase: {inserted} papers saved")
+            
+            # Also store in Neo4j (if available)
+            if neo4j_citation_service.is_available():
+                try:
+                    papers_list = cleaned_df.to_dict('records')
+                    neo4j_stored = 0
+                    citations_stored = 0
+                    
+                    # Store papers
+                    for paper in papers_list:
+                        if neo4j_citation_service.store_paper(paper):
+                            neo4j_stored += 1
+                    
+                    # Store citations
+                    citations = []
+                    for paper in papers_list:
+                        paper_id = paper.get("paperid") or paper.get("paperId")
+                        refs = paper.get("referencedworks", []) or []
+                        if isinstance(refs, list):
+                            for ref_id in refs[:50]:  # Limit per paper
+                                if ref_id:
+                                    citations.append((paper_id, ref_id))
+                    
+                    if citations:
+                        citations_stored = neo4j_citation_service.bulk_store_citations(citations)
+                    
+                    logging.info(f"Neo4j: Stored {neo4j_stored} papers, {citations_stored} citations")
+                    print(f"[OK] Neo4j: {neo4j_stored} papers, {citations_stored} citations saved")
+                    
+                except Exception as neo4j_error:
+                    logging.warning(f"Neo4j storage error (non-critical): {neo4j_error}")
+                    print(f"[WARN] Neo4j storage skipped: {neo4j_error}")
+                    
     except Exception as e:
         logging.error(f"Background storage error: {str(e)}")
-        print(f"✗ Background storage error: {str(e)}")
+        print(f"[ERROR] Background storage error: {str(e)}")
 
 @router.get("/fetch")
 async def fetch_papers(
@@ -62,8 +96,8 @@ async def fetch_papers(
         # Store in background (non-blocking)
         if background_tasks and not cleaned.empty:
             background_tasks.add_task(store_papers_background, cleaned, topic)
-            logging.info(f"✓ Queued {len(cleaned)} papers for background storage")
-            print(f"✓ Returning {len(papers_list)} papers to user, saving to DB in background...")
+            logging.info(f"[OK] Queued {len(cleaned)} papers for background storage")
+            print(f"[OK] Returning {len(papers_list)} papers to user, saving to DB in background...")
         
         # Return formatted response immediately
         return {

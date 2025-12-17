@@ -141,10 +141,14 @@ const StatsPanel = ({
 
     // Group by institutions - optimized for instant loading
     const institutionCounts = {};
+    let papersWithInstitutions = 0;
+    let totalInstitutionsFound = 0;
     papers.forEach(p => {
-      if (Array.isArray(p.institutions)) {
+      if (Array.isArray(p.institutions) && p.institutions.length > 0) {
+        papersWithInstitutions++;
         p.institutions.forEach(inst => {
           if (inst && inst.trim()) {
+            totalInstitutionsFound++;
             institutionCounts[inst] = (institutionCounts[inst] || 0) + 1;
           }
         });
@@ -153,6 +157,14 @@ const StatsPanel = ({
     const sortedInstitutions = Object.entries(institutionCounts)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10);
+    
+    console.log('Institution stats:', { 
+      totalPapers: papers.length, 
+      papersWithInstitutions, 
+      totalInstitutionsFound,
+      uniqueInstitutions: Object.keys(institutionCounts).length,
+      topInstitutions: sortedInstitutions 
+    });
 
     // Group by type
     const typeCounts = {};
@@ -1365,11 +1377,12 @@ export default function Results() {
         return;
       }
 
-      // No cache, fetch from all APIs (arXiv, CORE, PMC, Semantic Scholar, Google Scholar)
-      console.log('No cache found, fetching from all APIs...');
+      // No cache, fetch from backend (OpenAlex with institutions) + other APIs
+      console.log('No cache found, fetching from backend and other APIs...');
       
-      // Fetch from all sources in parallel
-      const [arxivResponse, coreResponse, pmcResponse, semanticResponse, googleScholarResponse] = await Promise.allSettled([
+      // Fetch from all sources in parallel (including backend OpenAlex endpoint)
+      const [backendResponse, arxivResponse, coreResponse, pmcResponse, semanticResponse, googleScholarResponse] = await Promise.allSettled([
+        searchAPI.fetchPapers(topic, 30).catch(err => ({ status: 'error', error: err })),  // Backend OpenAlex with institutions!
         arxivAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err })),
         coreAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err })),
         pmcAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err })),
@@ -1379,6 +1392,13 @@ export default function Results() {
       
       const allPapersList = [];
       const sources = [];
+      
+      // Process backend OpenAlex results (has institutions data!)
+      if (backendResponse.status === 'fulfilled' && backendResponse.value.status === 'success') {
+        allPapersList.push(...backendResponse.value.papers);
+        sources.push('OpenAlex');
+        console.log('OpenAlex papers received (with institutions):', backendResponse.value.papers.length);
+      }
       
       // Process arXiv results
       if (arxivResponse.status === 'fulfilled' && arxivResponse.value.status === 'success') {

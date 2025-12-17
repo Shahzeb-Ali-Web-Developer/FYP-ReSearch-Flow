@@ -51,6 +51,7 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
   const [showOnlyRootNodes, setShowOnlyRootNodes] = useState(false);
   const [minCitations, setMinCitations] = useState(0);
   const [showLabels, setShowLabels] = useState(true);
+  const [tooltip, setTooltip] = useState({ visible: false, x: 0, y: 0, content: null });
   const cyRef = useRef(null);
   const containerRef = useRef(null);
 
@@ -119,15 +120,38 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
         wheelSensitivity: 0.15, // Slower zoom with mouse wheel for better control
       });
 
-      // Add hover effects (visual feedback)
+      // Add hover effects with tooltip
       cy.on('mouseover', 'node', (evt) => {
         const node = evt.target;
+        const nodeData = node.data();
+        const position = node.renderedPosition();
+        
+        // Show enhanced tooltip
+        const authors = nodeData.authors && nodeData.authors.length > 0
+          ? nodeData.authors.slice(0, 3).join(', ') + (nodeData.authors.length > 3 ? ' et al.' : '')
+          : 'Unknown authors';
+        
+        setTooltip({
+          visible: true,
+          x: position.x,
+          y: position.y - 60,
+          content: {
+            title: nodeData.title,
+            year: nodeData.year || 'N/A',
+            citations: nodeData.citationCount || 0,
+            authors: authors,
+            venue: nodeData.venue || 'N/A',
+            isRoot: nodeData.isRoot
+          }
+        });
+        
         node.style('overlay-opacity', 0.3);
         node.style('z-index', 999);
       });
 
       cy.on('mouseout', 'node', (evt) => {
         const node = evt.target;
+        setTooltip({ visible: false, x: 0, y: 0, content: null });
         node.style('overlay-opacity', 0);
         node.style('z-index', 'auto');
       });
@@ -174,8 +198,8 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
       // Import API service
       const { searchAPI } = await import('../services/api');
       
-      // Get more nodes to find connections between papers
-      const response = await searchAPI.getCitationNetwork(papers, 1, 50); // Increased to get more connections
+      // Build citation network (optimized for speed and reliability)
+      const response = await searchAPI.getCitationNetwork(papers, 1, 50); // Balanced network building
       
       if (response.status === 'success' && response.network) {
         let { nodes, edges } = response.network;
@@ -196,14 +220,20 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
         
         console.log('After filtering:', { nodes: nodes.length, edges: edges.length });
         
-        // Convert to Cytoscape format with full titles
+        // Convert to Cytoscape format with clean, minimal labels
         const cyNodes = nodes.map((node) => {
           const title = node.title || node.label || 'Untitled';
           
+          // Shorter truncation for cleaner look
+          const maxLength = node.isRoot ? 60 : 45;
+          const truncatedTitle = title.length > maxLength 
+            ? title.substring(0, maxLength) + '...' 
+            : title;
+          
           return {
             data: {
-              id: String(node.id), // Ensure string ID for matching with edges
-              label: title, // Full title, no truncation
+              id: String(node.id),
+              label: truncatedTitle, // Clean, simple title only
               title: title,
               year: node.year,
               citationCount: node.citationCount || 0,
@@ -318,68 +348,76 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
       concentric: {
         name: 'concentric',
         fit: true,
-        padding: 60,
+        padding: 80,
         startAngle: 0,
         sweep: 360,
         clockwise: true,
         equidistant: false,
-        minNodeSpacing: 120, // Space between nodes in same level
+        minNodeSpacing: 180, // Increased spacing for better readability
         height: undefined,
         width: undefined,
-        spacing: 150, // Space between concentric levels
+        spacing: 200, // More space between concentric levels
         avoidOverlap: true,
         nodeDimensionsIncludeLabels: true,
         animate: true,
-        animationDuration: 800,
+        animationDuration: 600,
+        animationEasing: 'ease-out',
       },
       circle: {
         name: 'circle',
         fit: true,
-        padding: 60,
+        padding: 80,
         startAngle: 0,
         sweep: 360,
         clockwise: true,
-        radius: undefined, // Auto-calculate
-        spacing: 150, // Space between nodes
+        radius: undefined,
+        spacing: 200, // More space between nodes
         avoidOverlap: true,
         nodeDimensionsIncludeLabels: true,
         animate: true,
-        animationDuration: 800,
+        animationDuration: 600,
+        animationEasing: 'ease-out',
       },
       breadthfirst: {
         name: 'breadthfirst',
         directed: true,
-        spacingFactor: 3.0,
+        spacingFactor: 3.5, // Increased for better spacing
         fit: true,
-        padding: 60,
+        padding: 80,
         animate: true,
-        animationDuration: 800,
+        animationDuration: 600,
+        animationEasing: 'ease-out',
+        grid: false,
       },
       cose: {
         name: 'cose',
         quality: 'default',
-        nodeRepulsion: 10000,
-        idealEdgeLength: 200,
+        nodeRepulsion: 15000, // Increased repulsion for more space
+        idealEdgeLength: 250, // Longer edges for cleaner layout
+        edgeElasticity: 200,
         fit: true,
-        padding: 60,
+        padding: 80,
         animate: true,
-        animationDuration: 800,
+        animationDuration: 600,
         randomize: true,
+        componentSpacing: 150,
+        nodeOverlap: 20,
       },
     };
 
     if (dagreAvailable && layoutName === 'dagre') {
       return {
         name: 'dagre',
-        rankDir: 'TB', // Top to bottom instead of left to right
-        spacingFactor: 2.0,
-        nodeSep: 150,
-        edgeSep: 50,
-        rankSep: 200,
+        rankDir: 'TB',
+        spacingFactor: 2.5, // Increased spacing
+        nodeSep: 200, // More space between nodes
+        edgeSep: 80,
+        rankSep: 250, // More space between ranks
         fit: true,
-        padding: 50,
+        padding: 80,
         animate: true,
-        animationDuration: 800,
+        animationDuration: 600,
+        animationEasing: 'ease-out',
       };
     }
 
@@ -392,104 +430,104 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
     {
       selector: 'node',
       style: {
-        'background-color': '#4A5568',
+        'background-color': '#F8FAFC',
         'label': labelValue,
-        'width': 'mapData(citationCount, 0, 100, 180, 280)', // Much wider for full titles
-        'height': 'mapData(citationCount, 0, 100, 80, 120)', // Taller for multi-line text
-        'text-valign': 'center',
+        'width': 60,
+        'height': 60,
+        'text-valign': 'bottom',
         'text-halign': 'center',
-        'color': '#1A202C',
+        'color': '#1E293B',
         'font-size': '11px',
         'font-weight': '500',
-        'font-family': '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+        'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
         'text-wrap': 'wrap',
-        'text-max-width': '300px', // Allow longer text for root nodes
+        'text-max-width': '140px',
         'text-overflow-wrap': 'anywhere',
-        'text-transform': 'none',
-        'letter-spacing': '0.015em',
-        'line-height': '1.4',
-        'text-margin-y': '-2px',
-        'border-width': 3,
-        'border-color': '#2D3748',
-        'shape': 'round-rectangle',
-        'text-outline-width': 1.5,
-        'text-outline-color': '#FFFFFF',
-        'overlay-padding': '8px',
+        'text-margin-y': '8px',
+        'border-width': 2,
+        'border-color': '#CBD5E1',
+        'shape': 'ellipse',
         'text-background-color': '#FFFFFF',
         'text-background-opacity': 0.95,
-        'text-background-padding': '8px 10px',
+        'text-background-padding': '4px 8px',
         'text-background-shape': 'roundrectangle',
-        'text-background-corner-radius': '6px',
+        'background-opacity': 1,
+        'transition-property': 'background-color, border-color, border-width',
+        'transition-duration': '0.2s',
       },
     },
     {
       selector: 'node.root-node',
       style: {
-        'background-color': '#000000',
+        'background-color': '#3B82F6',
         'label': labelValue,
-        'width': 'mapData(citationCount, 0, 200, 200, 320)', // Much wider for full titles
-        'height': 'mapData(citationCount, 0, 200, 90, 140)', // Taller for multi-line text
-        'border-width': 4,
-        'border-color': '#000000',
+        'width': 'mapData(citationCount, 0, 200, 80, 100)',
+        'height': 'mapData(citationCount, 0, 200, 80, 100)',
+        'border-width': 3,
+        'border-color': '#2563EB',
         'font-weight': '600',
         'font-size': '12px',
-        'font-family': '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-        'color': '#FFFFFF',
-        'text-outline-width': 1.5,
-        'text-outline-color': '#000000',
-        'letter-spacing': '0.02em',
-        'line-height': '1.5',
-        'text-transform': 'none',
-        'text-margin-y': '-2px',
+        'color': '#1E293B',
+        'text-background-color': '#FFFFFF',
+        'text-background-opacity': 0.98,
+        'text-background-padding': '6px 10px',
+        'z-index': 100,
       },
     },
     {
       selector: 'node.citation-node',
       style: {
-        'background-color': '#718096',
+        'background-color': '#E2E8F0',
         'label': labelValue,
-        'width': 'mapData(citationCount, 0, 50, 160, 240)', // Much wider for full titles
-        'height': 'mapData(citationCount, 0, 50, 70, 100)', // Taller for multi-line text
+        'width': 'mapData(citationCount, 0, 100, 50, 75)',
+        'height': 'mapData(citationCount, 0, 100, 50, 75)',
         'font-size': '10px',
-        'font-family': '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
         'font-weight': '500',
-        'letter-spacing': '0.015em',
-        'line-height': '1.4',
-        'text-transform': 'none',
-        'text-margin-y': '-2px',
+        'border-color': '#94A3B8',
+        'border-width': 2,
+        'color': '#475569',
       },
     },
     {
       selector: 'edge',
       style: {
-        'width': 3, // Thicker edges for better visibility
-        'line-color': '#4A5568', // Darker, more visible color
-        'target-arrow-color': '#4A5568', // Match line color
+        'width': 1.5,
+        'line-color': '#CBD5E1',
+        'target-arrow-color': '#94A3B8',
         'target-arrow-shape': 'triangle',
-        'target-arrow-size': 10, // Larger arrows
+        'target-arrow-size': 6,
         'curve-style': 'bezier',
-        'opacity': 0.8, // Much more visible (was 0.4)
-        'control-point-step-size': 60,
+        'opacity': 0.5,
         'line-style': 'solid',
-        'line-cap': 'round',
+        'transition-property': 'line-color, width, opacity',
+        'transition-duration': '0.2s',
       },
     },
     {
       selector: 'node:selected',
       style: {
-        'background-color': '#E53E3E',
-        'border-color': '#C53030',
-        'border-width': 5,
+        'background-color': '#3B82F6',
+        'border-color': '#2563EB',
+        'border-width': 4,
         'z-index': 999,
       },
     },
     {
       selector: 'node:hover',
       style: {
-        'background-color': '#2B6CB0',
-        'border-color': '#2C5282',
-        'border-width': 4,
-        'overlay-opacity': 0.2,
+        'background-color': '#60A5FA',
+        'border-color': '#3B82F6',
+        'border-width': 3,
+        'z-index': 500,
+      },
+    },
+    {
+      selector: 'edge:hover',
+      style: {
+        'width': 2.5,
+        'line-color': '#64748B',
+        'target-arrow-color': '#475569',
+        'opacity': 0.8,
       },
     },
   ];
@@ -559,7 +597,7 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
       </div>
 
       {/* Toolbar */}
-      <div className="flex items-center justify-between p-3 border-b border-gray-200 bg-gray-50 flex-wrap gap-2">
+      <div className="flex items-center justify-between p-3 border-b border-gray-200 bg-slate-50 flex-wrap gap-2">
         <div className="flex items-center gap-2 flex-wrap">
           <select
             value={layout}
@@ -648,7 +686,7 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
       </div>
 
       {/* Graph Container */}
-      <div className="flex-1 relative bg-gray-50">
+      <div className="flex-1 relative bg-white">
         {error && (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center p-6">
@@ -675,6 +713,55 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
           style={{ width: '100%', height: '100%' }}
           className={loading || error ? 'hidden' : ''}
         />
+        
+        {/* Clean Tooltip */}
+        {tooltip.visible && tooltip.content && (
+          <div
+            className="absolute z-[1000] pointer-events-none"
+            style={{
+              left: `${tooltip.x}px`,
+              top: `${tooltip.y}px`,
+              transform: 'translate(-50%, -100%)',
+            }}
+          >
+            <div className="bg-white rounded-md shadow-lg border border-gray-200 p-3 max-w-xs">
+              <div className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium mb-2 ${
+                tooltip.content.isRoot 
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200' 
+                  : 'bg-gray-50 text-gray-700 border border-gray-200'
+              }`}>
+                {tooltip.content.isRoot ? 'Search Result' : 'Citation'}
+              </div>
+              <h3 className="font-semibold text-xs text-gray-900 mb-2 line-clamp-2 leading-tight">
+                {tooltip.content.title}
+              </h3>
+              <div className="space-y-1 text-[11px] text-gray-600">
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-500 w-16">Year</span>
+                  <span className="font-medium text-gray-900">{tooltip.content.year}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-500 w-16">Citations</span>
+                  <span className="font-medium text-gray-900">{tooltip.content.citations}</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-gray-500 w-16 flex-shrink-0">Authors</span>
+                  <span className="line-clamp-1 text-gray-900">{tooltip.content.authors}</span>
+                </div>
+                {tooltip.content.venue && tooltip.content.venue !== 'N/A' && (
+                  <div className="flex items-start gap-2">
+                    <span className="text-gray-500 w-16 flex-shrink-0">Venue</span>
+                    <span className="line-clamp-1 text-gray-900">{tooltip.content.venue}</span>
+                  </div>
+                )}
+              </div>
+              <div className="mt-2 pt-2 border-t border-gray-100 text-[10px] text-gray-400">
+                Click node for details
+              </div>
+            </div>
+          </div>
+        )}
+        
         {!loading && !error && elements.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center p-6">
