@@ -4,6 +4,21 @@ ReSearch Flow is an AI-powered academic research assistant designed to simplify 
 
 It integrates web scraping, citation mesh visualization, and Generative AI to automate the literature review process — from topic discovery to draft writing.
 
+## 📚 Documentation
+
+**New to the project? Start here:**
+
+| Document | Description |
+|----------|-------------|
+| **[Quick Start Guide](QUICK_START.md)** | Get up and running in 5 minutes |
+| **[Project Overview](PROJECT_OVERVIEW.md)** | Comprehensive project documentation |
+| **[Architecture Diagrams](ARCHITECTURE_DIAGRAM.md)** | Visual system architecture and data flows |
+| **[Developer Guide](DEVELOPER_GUIDE.md)** | Complete development guide with examples |
+| **[Technology Stack](TECHNOLOGY_STACK.md)** | Tech choices and rationale |
+| **[Roadmap](ROADMAP.md)** | Project milestones and future plans |
+| **[Contributing](CONTRIBUTING.md)** | How to contribute to the project |
+| **[Setup Instructions](SETUP_INSTRUCTIONS.md)** | Detailed setup guide |
+
 ## Project Overview
 
 ReSearch Flow allows users to:

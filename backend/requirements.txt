@@ -14,3 +14,5 @@ aiohttp
 redis
 google-search-results
 pydantic-settings
+neo4j==6.0.3
+py2neo==2021.2.4

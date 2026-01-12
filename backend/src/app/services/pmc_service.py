@@ -240,4 +240,7 @@ def _parse_pmc_article(article: ET.Element, pmc_id: Optional[str] = None) -> Opt
         logging.warning(f"Error parsing PMC article: {str(e)}")
         return None
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> 19c62c6432f4465bd0724c79e5a8f133d21dc582
