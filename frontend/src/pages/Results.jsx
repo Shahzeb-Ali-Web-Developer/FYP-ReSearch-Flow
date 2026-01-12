@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { searchAPI, savedArticlesAPI, APIError } from '../services/api';
+import { searchAPI, savedArticlesAPI, arxivAPI, coreAPI, pmcAPI, semanticScholarAPI, googleScholarAPI, APIError } from '../services/api';
 import { 
   BookOpen, X, FileText, MessageSquare, Code, Download, 
   ChevronDown, Plus, Trash2, MoreVertical, ArrowUpDown, BarChart3, CheckSquare, Network,
-  Check, Bookmark, Share2, Copy, CheckCircle, Building2
+  Check, Bookmark, Share2, Copy, CheckCircle, Building2, Send, Bot, User
 } from 'lucide-react';
 import SearchDropdown from '../components/SearchDropdown';
 import CitationMesh from '../components/CitationMesh';
@@ -16,48 +16,72 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// Compact paper card for the list (left column) - OpenAlex style
+// Compact paper card for the list (left column) - arXiv style
 const PaperListItem = ({ paper, isSelected, onClick }) => {
+  // Support both arXiv and OpenAlex paper formats
   const authors = Array.isArray(paper.authors) && paper.authors.length > 0
     ? paper.authors.slice(0, 2).map(a => typeof a === 'string' ? a : a.name || a).join(', ') + (paper.authors.length > 2 ? ', et al.' : '')
     : 'Unknown Authors';
 
+  const isArxiv = paper.source === 'arXiv' || paper.arxiv_id;
+  const isCore = paper.source === 'CORE' || paper.core_id;
+  const isPmc = paper.source === 'PMC' || paper.pmc_id;
+  const isSemanticScholar = paper.source === 'Semantic Scholar' || paper.semantic_scholar_id || (paper.paperId && !paper.arxiv_id && !paper.core_id && !paper.pmc_id && !paper.google_scholar_id);
+  const isGoogleScholar = paper.source === 'Google Scholar' || paper.google_scholar_id;
+  const arxivId = paper.arxiv_id;
+  const coreId = paper.core_id;
+  const pmcId = paper.pmc_id;
+  const semanticScholarId = paper.semantic_scholar_id || paper.paperId;
+  const googleScholarId = paper.google_scholar_id;
+  const publishedDate = paper.published_date ? new Date(paper.published_date).getFullYear() : null;
+  const year = paper.year || publishedDate;
   const venue = paper.venue && paper.venue !== 'N/A' ? paper.venue : null;
-  const year = paper.year || null;
   const citationCount = paper.citationCount || 0;
-  const pdfUrl = paper.openAccessPdf || (paper.url && paper.url.toLowerCase().endsWith('.pdf') ? paper.url : null);
+  const pdfUrl = paper.pdf_url || paper.openAccessPdf || (paper.url && paper.url.toLowerCase().endsWith('.pdf') ? paper.url : null);
+  const abstract = paper.abstract || '';
+  const abstractPreview = abstract.length > 200 ? abstract.substring(0, 200) + '...' : abstract;
 
   return (
-    <div
-      onClick={onClick}
-      className={`p-4 cursor-pointer border-b border-gray-200 hover:bg-gray-50 transition-colors ${
-        isSelected ? 'bg-gray-100' : ''
-      }`}
-    >
-      <h3 className="text-base font-semibold text-black mb-1.5 line-clamp-2 hover:text-gray-700 transition-colors">
-        {paper.title || 'Untitled Paper'}
-      </h3>
+    <div className={`border-b border-gray-200 ${isSelected ? 'bg-gray-100' : 'bg-white'}`}>
+      <div
+        onClick={onClick}
+        className={`p-4 cursor-pointer hover:bg-gray-50 transition-colors`}
+      >
+        <h3 className="text-base font-semibold text-black mb-1.5 line-clamp-2 hover:text-gray-700 transition-colors">
+          {paper.title || 'Untitled Paper'}
+        </h3>
 
-      <div className="text-sm text-gray-600 mb-2">
-        {year && <span>{year}</span>}
-        {year && authors && <span> · </span>}
-        <span>{authors}</span>
-        {venue && <span> · {venue}</span>}
-      </div>
+        <div className="text-sm text-gray-600 mb-2">
+          {arxivId && <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded">arXiv:{arxivId}</span>}
+          {coreId && <span className="font-mono text-xs bg-blue-100 px-1.5 py-0.5 rounded text-blue-800">CORE</span>}
+          {pmcId && <span className="font-mono text-xs bg-green-100 px-1.5 py-0.5 rounded text-green-800">PMC:{pmcId}</span>}
+          {isSemanticScholar && !arxivId && !coreId && !pmcId && !isGoogleScholar && <span className="font-mono text-xs bg-purple-100 px-1.5 py-0.5 rounded text-purple-800">Semantic Scholar</span>}
+          {isGoogleScholar && <span className="font-mono text-xs bg-orange-100 px-1.5 py-0.5 rounded text-orange-800">Google Scholar</span>}
+          {year && <span className="ml-2">{year}</span>}
+          {authors && <span className="ml-2">{authors}</span>}
+          {venue && <span className="ml-2"> · {venue}</span>}
+        </div>
 
-      <div className="flex items-center justify-between text-sm text-gray-500">
-        <span>Cited by {citationCount.toLocaleString()}</span>
-        {pdfUrl && (
-          <a
-            href={pdfUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="text-black hover:text-gray-700 font-medium"
-          >
-            PDF
-          </a>
+        {abstract && (
+          <div className="text-sm text-gray-600 mb-2 line-clamp-2">
+            {abstractPreview}
+          </div>
         )}
+
+        <div className="flex items-center justify-between text-sm text-gray-500">
+          {!isArxiv && <span>Cited by {citationCount.toLocaleString()}</span>}
+          {pdfUrl && (
+            <a
+              href={pdfUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="text-black hover:text-gray-700 font-medium"
+            >
+              PDF
+            </a>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -366,7 +390,7 @@ const DetailPanel = ({ paper, onClose }) => {
   const citationCount = paper.citationCount || 0;
   const referenceCount = paper.referenceCount || 0;
   const doi = paper.externalIds && (paper.externalIds.DOI || paper.externalIds.doi);
-  const pdfUrl = paper.openAccessPdf || (paper.url && paper.url.toLowerCase().endsWith('.pdf') ? paper.url : null);
+  const pdfUrl = paper.pdf_url || paper.openAccessPdf || (paper.url && paper.url.toLowerCase().endsWith('.pdf') ? paper.url : null);
   const htmlUrl = paper.url && !pdfUrl ? paper.url : null;
   const fields = Array.isArray(paper.fieldsOfStudy) ? paper.fieldsOfStudy : [];
   const isOpenAccess = Boolean(paper.isOpenAccess);
@@ -380,11 +404,39 @@ const DetailPanel = ({ paper, onClose }) => {
   const [showLinkDropdown, setShowLinkDropdown] = useState(false);
   const [copiedToClipboard, setCopiedToClipboard] = useState(false);
   const [loadingSaved, setLoadingSaved] = useState(true);
+  const [pdfContent, setPdfContent] = useState(null);
+  const [summarizing, setSummarizing] = useState(false);
+  const [summary, setSummary] = useState(null);
+  const [showChat, setShowChat] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
 
   const abstract = paper.abstract && paper.abstract !== 'N/A' ? paper.abstract : null;
   const abstractPreview = abstract && abstract.length > 300 ? abstract.substring(0, 300) + '...' : abstract;
 
-  const paperId = paper.paperId || paper.id;
+  const paperId = paper.paperId || paper.id || paper.core_id || paper.pmc_id || paper.semantic_scholar_id || paper.google_scholar_id;
+  const isArxiv = paper.source === 'arXiv' || paper.arxiv_id;
+  const isCore = paper.source === 'CORE' || paper.core_id;
+  const isPmc = paper.source === 'PMC' || paper.pmc_id;
+  const isSemanticScholar = paper.source === 'Semantic Scholar' || paper.semantic_scholar_id || (paper.paperId && !paper.arxiv_id && !paper.core_id && !paper.pmc_id && !paper.google_scholar_id);
+  const isGoogleScholar = paper.source === 'Google Scholar' || paper.google_scholar_id;
+  const arxivId = paper.arxiv_id;
+  const coreId = paper.core_id;
+  const pmcId = paper.pmc_id;
+  const semanticScholarId = paper.semantic_scholar_id || paper.paperId;
+  const googleScholarId = paper.google_scholar_id;
+  const pdfUrlForExtract = paper.pdf_url || paper.openAccessPdf || pdfUrl;
+
+  // Reset PDF content, summary, and chat when paper changes
+  useEffect(() => {
+    setPdfContent(null);
+    setSummary(null);
+    setSummarizing(false);
+    setShowChat(false);
+    setChatMessages([]);
+    setChatInput('');
+  }, [paper]);
 
   // Check if article is saved when component mounts or paper changes
   useEffect(() => {
@@ -539,6 +591,138 @@ const DetailPanel = ({ paper, onClose }) => {
     }
   };
 
+  // Handle summarization - extracts PDF and generates summary in one step
+  const handleSummarize = async () => {
+    // Check if PDF is available for extraction
+    if (!pdfUrlForExtract) {
+      // For Semantic Scholar or Google Scholar papers, if no PDF but have abstract, provide helpful message
+      if ((isSemanticScholar || isGoogleScholar) && abstract) {
+        showToast('PDF not available for this paper. Summarization requires PDF access.', 'info');
+      } else {
+        showToast('No PDF URL available for this paper', 'error');
+      }
+      return;
+    }
+
+    // Check if already summarized
+    if (summary) {
+      return; // Already summarized
+    }
+
+    setSummarizing(true);
+    try {
+      let response;
+      // Use appropriate API based on source - all APIs can handle any PDF URL
+      // But we use the source-specific API for consistency
+      if (isArxiv) {
+        response = await arxivAPI.summarizePaper(arxivId || null, pdfUrlForExtract || null);
+      } else if (isCore) {
+        response = await coreAPI.summarizePaper(pdfUrlForExtract);
+      } else if (isPmc) {
+        response = await pmcAPI.summarizePaper(pdfUrlForExtract);
+      } else if (isSemanticScholar) {
+        // Semantic Scholar API works with any PDF URL from any source
+        response = await semanticScholarAPI.summarizePaper(pdfUrlForExtract);
+      } else if (isGoogleScholar) {
+        // Google Scholar API works with any PDF URL from any source
+        response = await googleScholarAPI.summarizePaper(pdfUrlForExtract);
+      } else {
+        // Fallback to Semantic Scholar API (works with any PDF URL)
+        response = await semanticScholarAPI.summarizePaper(pdfUrlForExtract);
+      }
+      
+      if (response.status === 'success') {
+        // Set summary if available
+        if (response.summary) {
+          setSummary(response.summary);
+        }
+        
+        // Also set PDF content if returned
+        if (response.full_text) {
+          setPdfContent(response.full_text);
+        }
+        
+        showToast('PDF extracted and summary generated successfully using AI (GPT-4)', 'success');
+      } else {
+        showToast('Failed to generate summary', 'error');
+      }
+    } catch (error) {
+      console.error('Error summarizing paper:', error);
+      
+      // Handle specific PDF not available errors
+      if (error.status === 404 || (error.details && error.details.error === 'PDF not available')) {
+        const errorMessage = error.details?.message || error.message || 'PDF is not available for this paper.';
+        showToast(errorMessage, 'error');
+      } else {
+        // Generic error handling
+        const errorMessage = error.message || error.details?.message || 'Failed to summarize paper. Please try again.';
+        showToast(`Failed to summarize: ${errorMessage}`, 'error');
+      }
+    } finally {
+      setSummarizing(false);
+    }
+  };
+
+  // Handle chat question
+  const handleChatSubmit = async (e) => {
+    e.preventDefault();
+    if (!chatInput.trim() || chatLoading) return;
+    
+    if (!pdfContent) {
+      showToast('Please generate summary first to extract paper content', 'info');
+      return;
+    }
+
+    const userQuestion = chatInput.trim();
+    setChatInput('');
+    
+    // Add user message to chat
+    const userMessage = { role: 'user', content: userQuestion };
+    setChatMessages(prev => [...prev, userMessage]);
+    setChatLoading(true);
+
+    try {
+      // Build conversation history (last 10 messages to keep context manageable)
+      const history = chatMessages.slice(-10).map(msg => ({
+        role: msg.role,
+        content: msg.content
+      }));
+      
+      let response;
+      // Use appropriate API based on source
+      if (isArxiv) {
+        response = await arxivAPI.askQuestion(arxivId || null, pdfUrlForExtract || null, userQuestion, history);
+      } else if (isCore) {
+        response = await coreAPI.askQuestion(pdfUrlForExtract, userQuestion, history);
+      } else if (isPmc) {
+        response = await pmcAPI.askQuestion(pdfUrlForExtract, userQuestion, history);
+      } else if (isSemanticScholar) {
+        // Semantic Scholar API works with any PDF URL from any source
+        response = await semanticScholarAPI.askQuestion(pdfUrlForExtract, userQuestion, history);
+      } else if (isGoogleScholar) {
+        // Google Scholar API works with any PDF URL from any source
+        response = await googleScholarAPI.askQuestion(pdfUrlForExtract, userQuestion, history);
+      } else {
+        // Fallback to Semantic Scholar API (works with any PDF URL)
+        response = await semanticScholarAPI.askQuestion(pdfUrlForExtract, userQuestion, history);
+      }
+      
+      if (response.status === 'success' && response.answer) {
+        const assistantMessage = { role: 'assistant', content: response.answer };
+        setChatMessages(prev => [...prev, assistantMessage]);
+      } else {
+        showToast('Failed to get answer', 'error');
+        setChatMessages(prev => prev.slice(0, -1)); // Remove user message on error
+      }
+    } catch (error) {
+      console.error('Error asking question:', error);
+      showToast(`Failed to get answer: ${error.message}`, 'error');
+      setChatMessages(prev => prev.slice(0, -1)); // Remove user message on error
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
   return (
     <div className="fixed inset-y-0 right-0 w-full md:w-[600px] bg-white border-l border-gray-200 z-50 overflow-y-auto shadow-2xl">
       {/* Header */}
@@ -656,6 +840,54 @@ const DetailPanel = ({ paper, onClose }) => {
             <FileText className="w-4 h-4" />
             Notes
           </button>
+        )}
+        {/* Show summarize button if: PDF available OR (Semantic Scholar/Google Scholar paper with abstract) */}
+        {(pdfUrlForExtract || (isSemanticScholar && abstract) || (isGoogleScholar && abstract)) && (
+          <>
+            <button
+              onClick={handleSummarize}
+              disabled={summarizing || summary}
+              className={`px-4 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
+                summary
+                  ? 'bg-gray-100 hover:bg-gray-200 text-black border border-gray-300'
+                  : 'bg-black hover:bg-gray-800 text-white'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+              title={summary ? 'Summary already generated' : pdfUrlForExtract ? 'Extract PDF and generate AI summary (GPT-4)' : ((isSemanticScholar || isGoogleScholar) && abstract ? 'PDF not available - only abstract available' : 'Extract PDF and generate AI summary')}
+            >
+              {summarizing ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
+                  <span>Extracting & Summarizing...</span>
+                </>
+              ) : summary ? (
+                <>
+                  <CheckCircle className="w-4 h-4" />
+                  <span>Summarized</span>
+                </>
+              ) : (
+                <>
+                  <MessageSquare className="w-4 h-4" />
+                  <span>Summarize with AI</span>
+                </>
+              )}
+            </button>
+            {pdfContent && summary && (
+              <button
+                onClick={() => {
+                  setShowChat(!showChat);
+                }}
+                className={`px-4 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
+                  showChat
+                    ? 'bg-gray-100 hover:bg-gray-200 text-black border border-gray-300'
+                    : 'bg-black hover:bg-gray-800 text-white'
+                }`}
+                title="Ask questions about this paper"
+              >
+                <Bot className="w-4 h-4" />
+                <span>Ask about this paper</span>
+              </button>
+            )}
+          </>
         )}
       </div>
 
@@ -790,6 +1022,143 @@ const DetailPanel = ({ paper, onClose }) => {
           </div>
         )}
       </div>
+
+      {/* Chat Interface */}
+      {showChat && pdfContent && (
+        <div className="p-4 border-t-2 border-purple-300 bg-purple-50">
+          <div className="flex items-center gap-2 mb-3">
+            <Bot className="w-5 h-5 text-purple-600" />
+            <h3 className="text-base font-semibold text-black">Ask about this paper</h3>
+          </div>
+          
+          {/* Chat Messages */}
+          <div className="bg-white border border-gray-200 rounded-lg p-4 max-h-[400px] overflow-y-auto mb-3 space-y-4">
+            {chatMessages.length === 0 ? (
+              <div className="text-center text-gray-500 text-sm py-8">
+                <Bot className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                <p>Ask any question about this research paper</p>
+                <p className="text-xs mt-1">Example: "What is the main contribution?" or "Explain the methodology"</p>
+              </div>
+            ) : (
+              chatMessages.map((msg, idx) => (
+                <div
+                  key={idx}
+                  className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
+                >
+                  <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+                    msg.role === 'user' ? 'bg-black text-white' : 'bg-purple-100 text-purple-600'
+                  }`}>
+                    {msg.role === 'user' ? (
+                      <User className="w-4 h-4" />
+                    ) : (
+                      <Bot className="w-4 h-4" />
+                    )}
+                  </div>
+                  <div className={`flex-1 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+                    <div className={`inline-block p-3 rounded-lg max-w-[85%] ${
+                      msg.role === 'user'
+                        ? 'bg-black text-white'
+                        : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+            {chatLoading && (
+              <div className="flex gap-3">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center">
+                  <Bot className="w-4 h-4" />
+                </div>
+                <div className="bg-gray-100 rounded-lg p-3">
+                  <div className="flex gap-1">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Chat Input */}
+          <form onSubmit={handleChatSubmit} className="flex gap-2">
+            <input
+              type="text"
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              placeholder="Ask a question about this paper..."
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              disabled={chatLoading}
+            />
+            <button
+              type="submit"
+              disabled={!chatInput.trim() || chatLoading}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            >
+              <Send className="w-4 h-4" />
+              <span>Send</span>
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* AI Summary Display */}
+      {summary && (
+        <div className="p-4 border-t-2 border-blue-300 bg-blue-50">
+          <div className="flex items-center gap-2 mb-3">
+            <MessageSquare className="w-5 h-5 text-blue-600" />
+            <h3 className="text-base font-semibold text-black">AI Summary (Generated by ChatGPT)</h3>
+          </div>
+          <div className="space-y-4">
+            {summary.problem_statement && (
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-gray-700 mb-2">Problem Statement</h4>
+                <p className="text-sm text-gray-600 leading-relaxed">{summary.problem_statement}</p>
+              </div>
+            )}
+            {summary.methodology && (
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-gray-700 mb-2">Methodology</h4>
+                <p className="text-sm text-gray-600 leading-relaxed">{summary.methodology}</p>
+              </div>
+            )}
+            {summary.key_findings && (
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-gray-700 mb-2">Key Findings</h4>
+                <p className="text-sm text-gray-600 leading-relaxed">{summary.key_findings}</p>
+              </div>
+            )}
+            {summary.conclusion && (
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-gray-700 mb-2">Conclusion</h4>
+                <p className="text-sm text-gray-600 leading-relaxed">{summary.conclusion}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Full PDF Content Display */}
+      {pdfContent && (
+        <div className="p-4 border-t-2 border-gray-300 bg-gray-50">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-black" />
+              <h3 className="text-base font-semibold text-black">Extracted PDF Content</h3>
+            </div>
+            <span className="text-xs text-gray-500 font-medium">
+              {pdfContent.length.toLocaleString()} characters | {pdfContent.split(/\s+/).length.toLocaleString()} words
+            </span>
+          </div>
+          <div className="bg-white border-2 border-gray-300 rounded-lg p-4 max-h-[600px] overflow-y-auto shadow-inner">
+            <div className="text-sm text-gray-800 whitespace-pre-wrap font-sans leading-relaxed">
+              {pdfContent}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast Container */}
       <ToastContainer toasts={toasts} removeToast={removeToast} />
@@ -996,24 +1365,76 @@ export default function Results() {
         return;
       }
 
-      // No cache, fetch from API
-      console.log('No cache found, fetching from API...');
-      const response = await searchAPI.fetchPapers(topic, 100, false);
-      console.log('API Response:', response);
+      // No cache, fetch from all APIs (arXiv, CORE, PMC, Semantic Scholar, Google Scholar)
+      console.log('No cache found, fetching from all APIs...');
       
-      if (response.status === 'success') {
-        console.log('Papers received:', response.papers.length);
-        setAllPapers(response.papers);
-        setPapers(response.papers);
+      // Fetch from all sources in parallel
+      const [arxivResponse, coreResponse, pmcResponse, semanticResponse, googleScholarResponse] = await Promise.allSettled([
+        arxivAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err })),
+        coreAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err })),
+        pmcAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err })),
+        semanticScholarAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err })),
+        googleScholarAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err }))
+      ]);
+      
+      const allPapersList = [];
+      const sources = [];
+      
+      // Process arXiv results
+      if (arxivResponse.status === 'fulfilled' && arxivResponse.value.status === 'success') {
+        allPapersList.push(...arxivResponse.value.papers);
+        sources.push('arXiv');
+        console.log('arXiv papers received:', arxivResponse.value.papers.length);
+      }
+      
+      // Process CORE results
+      if (coreResponse.status === 'fulfilled' && coreResponse.value.status === 'success') {
+        allPapersList.push(...coreResponse.value.papers);
+        sources.push('CORE');
+        console.log('CORE papers received:', coreResponse.value.papers.length);
+      }
+      
+      // Process PMC results
+      if (pmcResponse.status === 'fulfilled' && pmcResponse.value.status === 'success') {
+        allPapersList.push(...pmcResponse.value.papers);
+        sources.push('PMC');
+        console.log('PMC papers received:', pmcResponse.value.papers.length);
+      }
+      
+      // Process Semantic Scholar results
+      if (semanticResponse.status === 'fulfilled' && semanticResponse.value.status === 'success') {
+        allPapersList.push(...semanticResponse.value.papers);
+        sources.push('Semantic Scholar');
+        console.log('Semantic Scholar papers received:', semanticResponse.value.papers.length);
+      }
+      
+      // Process Google Scholar results
+      if (googleScholarResponse.status === 'fulfilled' && googleScholarResponse.value.status === 'success') {
+        allPapersList.push(...googleScholarResponse.value.papers);
+        sources.push('Google Scholar');
+        console.log('Google Scholar papers received:', googleScholarResponse.value.papers.length);
+      }
+      
+      // Process Google Scholar results
+      if (googleScholarResponse.status === 'fulfilled' && googleScholarResponse.value.status === 'success') {
+        allPapersList.push(...googleScholarResponse.value.papers);
+        sources.push('Google Scholar');
+        console.log('Google Scholar papers received:', googleScholarResponse.value.papers.length);
+      }
+      
+      if (allPapersList.length > 0) {
+        console.log('Total papers received:', allPapersList.length);
+        setAllPapers(allPapersList);
+        setPapers(allPapersList);
         setStats({
-          total: response.count,
-          sources: response.sources
+          total: allPapersList.length,
+          sources: sources
         });
         
         // Save to cache for future use
-        await saveToCache(topic, response.papers);
-      } else if (response.status === 'no_results') {
-        setError(response.message);
+        await saveToCache(topic, allPapersList);
+      } else {
+        setError('No papers found. Please try a different search term.');
         setAllPapers([]);
         setPapers([]);
       }
@@ -1253,6 +1674,7 @@ export default function Results() {
       setFilters([createFilter('title_abstract', 'includes', query), ...filters]);
     }
   };
+
 
   // Export to Excel function
   const exportToExcel = () => {
@@ -1660,14 +2082,17 @@ export default function Results() {
           {!loading && !error && papers.length > 0 && (
               <>
                 <div className="border-b border-gray-200">
-                  {currentPapers.map((paper, index) => (
-                    <PaperListItem
-                      key={paper.paperId || `${index}-${paper.title}`}
-                      paper={paper}
-                      isSelected={selectedPaper && selectedPaper.paperId === paper.paperId}
-                      onClick={() => setSelectedPaper(paper)}
-                    />
-              ))}
+                  {currentPapers.map((paper, index) => {
+                    const paperId = paper.arxiv_id || paper.paperId || `${index}-${paper.title}`;
+                    return (
+                      <PaperListItem
+                        key={paperId}
+                        paper={paper}
+                        isSelected={selectedPaper && (selectedPaper.arxiv_id || selectedPaper.paperId) === paperId}
+                        onClick={() => setSelectedPaper(paper)}
+                      />
+                    );
+                  })}
             </div>
 
                 {/* Pagination */}
