@@ -12,6 +12,12 @@ def store_to_supabase(df, topic):
         logging.warning("Attempted to store empty DataFrame")
         return 0
     
+    # Check if Supabase is configured
+    if supabase is None:
+        logging.warning("Supabase not configured. Skipping database storage.")
+        print("[WARN] Supabase not configured. Papers will not be saved to database.")
+        return 0
+    
     # Ensure lowercase column names
     df.columns = df.columns.str.lower()
     
@@ -138,8 +144,8 @@ def store_to_supabase(df, topic):
                 ).execute()
                 
                 inserted_count += len(batch)
-                logging.info(f"✓ Batch {batch_num} inserted successfully: {len(batch)} papers")
-                print(f"✓ Batch {batch_num} inserted successfully")
+                logging.info(f"[OK] Batch {batch_num} inserted successfully: {len(batch)} papers")
+                print(f"[OK] Batch {batch_num} inserted successfully")
                 success = True
                 break
                 
@@ -147,11 +153,11 @@ def store_to_supabase(df, topic):
                 if attempt < 2:  # Will retry
                     wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s
                     logging.warning(f"Batch {batch_num} attempt {attempt + 1} failed, retrying in {wait_time}s: {str(e)}")
-                    print(f"⚠ Batch {batch_num} attempt {attempt + 1} failed, retrying...")
+                    print(f"[WARN] Batch {batch_num} attempt {attempt + 1} failed, retrying...")
                     time.sleep(wait_time)
                 else:  # Last attempt failed
-                    logging.error(f"✗ Batch {batch_num} failed after 3 attempts: {str(e)}")
-                    print(f"✗ Batch {batch_num} failed after 3 attempts")
+                    logging.error(f"[ERROR] Batch {batch_num} failed after 3 attempts: {str(e)}")
+                    print(f"[ERROR] Batch {batch_num} failed after 3 attempts")
         
         # If batch insert failed, try individual inserts
         if not success:
@@ -160,11 +166,11 @@ def store_to_supabase(df, topic):
                 try:
                     supabase.table("research_papers").upsert(record).execute()
                     inserted_count += 1
-                    logging.info(f"✓ Individual insert: {record.get('title')}")
+                    logging.info(f"[OK] Individual insert: {record.get('title')}")
                 except Exception as e:
                     errors += 1
-                    logging.error(f"✗ Failed to insert {record.get('title')}: {str(e)}")
-                    print(f"✗ Failed: {record.get('title')[:50]}...")
+                    logging.error(f"[ERROR] Failed to insert {record.get('title')}: {str(e)}")
+                    print(f"[ERROR] Failed: {record.get('title')[:50]}...")
         
         # Small delay between batches to avoid rate limits
         if i + batch_size < len(records):

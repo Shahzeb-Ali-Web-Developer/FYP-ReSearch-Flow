@@ -178,4 +178,7 @@ The summarization service is designed to be easily replaceable:
 - All arXiv papers are open access, so PDFs are always available
 - The system maintains compatibility with existing OpenAlex paper format for other features
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> 19c62c6432f4465bd0724c79e5a8f133d21dc582

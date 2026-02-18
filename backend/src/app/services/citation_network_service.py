@@ -133,22 +133,30 @@ def build_citation_network(paper_ids: List[str], max_depth: int = 1, max_nodes: 
 
 def build_citation_network_from_papers(papers: List[Dict[str, Any]], max_depth: int = 1, max_nodes: int = 50) -> Dict[str, Any]:
     """
-    Build citation network from a list of paper dictionaries (from search results).
-    This is more efficient as it uses existing paper data.
+    Build an interconnected citation network from search results (optimized for speed).
+    
+    Strategy:
+    1. Start with root papers (search results)
+    2. Fetch papers they cite (1 level deep)
+    3. Find connections between papers
+    4. Create a useful, interconnected graph quickly
     """
-    logging.info(f"Building citation network from {len(papers)} papers")
+    logging.info(f"Building citation network from {len(papers)} papers, max_depth={max_depth}, max_nodes={max_nodes}")
     
     nodes: Dict[str, Dict[str, Any]] = {}
     edges: List[Dict[str, Any]] = []
     visited: Set[str] = set()
+    root_ids: Set[str] = set()
+    to_process: List[Tuple[str, int, str]] = []  # (paper_id, depth, relation_type)
     
-    # Add initial papers as nodes
+    # Step 1: Add root papers (search results)
     for paper in papers:
         paper_id = paper.get("paperId") or paper.get("id")
         if not paper_id or paper_id in visited:
             continue
             
         visited.add(paper_id)
+        root_ids.add(paper_id)
         nodes[paper_id] = {
             "id": paper_id,
             "label": (paper.get("title") or "Unknown Title")[:100],
@@ -159,47 +167,113 @@ def build_citation_network_from_papers(papers: List[Dict[str, Any]], max_depth: 
             "venue": paper.get("venue", "N/A"),
             "isRoot": True
         }
+        to_process.append((paper_id, 0, "root"))
+    
+    # Step 2: Build comprehensive network by exploring citations
+    while to_process and len(nodes) < max_nodes:
+        current_id, depth, relation = to_process.pop(0)
         
-        # Add edges for referenced works that are in our paper set
-        referenced_works = paper.get("referencedWorks", []) or []
+        if depth >= max_depth:
+            continue
+        
+        work = fetch_work_details(current_id)
+        if not work:
+            continue
+        
+        # Get papers this work CITES (forward citations - references)
+        referenced_works = work.get("referenced_works", [])[:10]  # Limit for speed
+        
         for ref_id in referenced_works:
-            # Check if referenced paper is in our current set
-            ref_paper = next((p for p in papers if (p.get("paperId") or p.get("id")) == ref_id), None)
+            if len(nodes) >= max_nodes:
+                break
             
-            if ref_paper:
-                ref_paper_id = ref_paper.get("paperId") or ref_paper.get("id")
-                if ref_paper_id not in nodes:
-                    nodes[ref_paper_id] = {
-                        "id": ref_paper_id,
-                        "label": (ref_paper.get("title") or "Unknown Title")[:100],
-                        "title": ref_paper.get("title", "Unknown Title"),
-                        "year": ref_paper.get("year"),
-                        "citationCount": ref_paper.get("citationCount", 0),
-                        "authors": ref_paper.get("authors", [])[:3],
-                        "venue": ref_paper.get("venue", "N/A"),
-                        "isRoot": True
-                    }
-                
+            # Normalize ID
+            if ref_id.startswith("https://openalex.org/"):
+                ref_id = ref_id.replace("https://openalex.org/", "")
+            
+            # Add edge
+            if current_id in nodes:
                 edges.append({
-                    "source": paper_id,
-                    "target": ref_paper_id,
+                    "source": current_id,
+                    "target": ref_id,
                     "type": "cites"
                 })
+            
+            # Add node if not already added
+            if ref_id not in visited:
+                ref_work = fetch_work_details(ref_id)
+                if ref_work:
+                    visited.add(ref_id)
+                    nodes[ref_id] = {
+                        "id": ref_id,
+                        "label": ref_work.get("display_name", "Unknown Title")[:100],
+                        "title": ref_work.get("display_name", "Unknown Title"),
+                        "year": ref_work.get("publication_year"),
+                        "citationCount": ref_work.get("cited_by_count", 0),
+                        "authors": [
+                            (a.get("author") or {}).get("display_name", "Unknown")
+                            for a in (ref_work.get("authorships") or [])[:3]
+                        ],
+                        "venue": (ref_work.get("primary_location") or {}).get("source", {}).get("display_name", "N/A"),
+                        "isRoot": False
+                    }
+                    # Continue exploring from this paper (go deeper) - but only 1 level
+                    if depth < max_depth - 1:
+                        to_process.append((ref_id, depth + 1, "reference"))
     
-    # Filter edges to only include nodes we have
+    # Step 3: Find additional connections between existing nodes (quick check)
+    # Check if any of our nodes cite each other (cross-references)
+    node_ids = list(nodes.keys())
+    connection_count = len(edges)
+    
+    if connection_count < len(node_ids) * 0.2:  # If graph is very sparse, find more connections
+        logging.info("Finding additional cross-references...")
+        for node_id in node_ids[:10]:  # Check first 10 nodes only
+            if len(edges) >= max_nodes:  # Stop if we have enough edges
+                break
+            
+            work = fetch_work_details(node_id)
+            if work:
+                refs = work.get("referenced_works", [])[:15]
+                for ref in refs:
+                    ref_clean = ref.replace("https://openalex.org/", "")
+                    if ref_clean in nodes and ref_clean != node_id:
+                        # Check if edge doesn't already exist
+                        edge_exists = any(
+                            e["source"] == node_id and e["target"] == ref_clean 
+                            for e in edges
+                        )
+                        if not edge_exists:
+                            edges.append({
+                                "source": node_id,
+                                "target": ref_clean,
+                                "type": "cites"
+                            })
+    
+    # Filter edges to only include valid nodes
     valid_node_ids = set(nodes.keys())
     edges = [e for e in edges if e["source"] in valid_node_ids and e["target"] in valid_node_ids]
     
+    # Remove duplicate edges
+    seen_edges = set()
+    unique_edges = []
+    for edge in edges:
+        edge_key = (edge["source"], edge["target"])
+        if edge_key not in seen_edges:
+            seen_edges.add(edge_key)
+            unique_edges.append(edge)
+    
     nodes_list = list(nodes.values())
     
-    logging.info(f"Citation network built: {len(nodes_list)} nodes, {len(edges)} edges")
+    logging.info(f"Comprehensive citation network built: {len(nodes_list)} nodes, {len(unique_edges)} edges")
     
     return {
         "nodes": nodes_list,
-        "edges": edges,
+        "edges": unique_edges,
         "stats": {
             "totalNodes": len(nodes_list),
-            "totalEdges": len(edges),
-            "rootNodes": sum(1 for n in nodes_list if n.get("isRoot", False))
+            "totalEdges": len(unique_edges),
+            "rootNodes": sum(1 for n in nodes_list if n.get("isRoot", False)),
+            "citationNodes": sum(1 for n in nodes_list if not n.get("isRoot", False))
         }
     }

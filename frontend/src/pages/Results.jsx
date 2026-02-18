@@ -828,8 +828,8 @@ const DetailPanel = ({ paper, onClose }) => {
         <button
           onClick={isSaved ? handleOpenNotes : handleSaveArticle}
           className={`px-4 py-2 rounded text-sm flex items-center gap-2 transition-colors ${isSaved
-              ? 'bg-gray-100 hover:bg-gray-200 text-black border border-gray-300'
-              : 'bg-black hover:bg-gray-800 text-white'
+            ? 'bg-gray-100 hover:bg-gray-200 text-black border border-gray-300'
+            : 'bg-black hover:bg-gray-800 text-white'
             }`}
           title={isSaved ? 'View/Edit Notes' : 'Save Article'}
           disabled={loadingSaved}
@@ -863,8 +863,8 @@ const DetailPanel = ({ paper, onClose }) => {
               onClick={handleSummarize}
               disabled={summarizing || summary}
               className={`px-4 py-2 rounded text-sm flex items-center gap-2 transition-colors ${summary
-                  ? 'bg-gray-100 hover:bg-gray-200 text-black border border-gray-300'
-                  : 'bg-black hover:bg-gray-800 text-white'
+                ? 'bg-gray-100 hover:bg-gray-200 text-black border border-gray-300'
+                : 'bg-black hover:bg-gray-800 text-white'
                 } disabled:opacity-50 disabled:cursor-not-allowed`}
               title={summary ? 'Summary already generated' : pdfUrlForExtract ? 'Extract PDF and generate AI summary (GPT-4)' : ((isSemanticScholar || isGoogleScholar) && abstract ? 'PDF not available - only abstract available' : 'Extract PDF and generate AI summary')}
             >
@@ -906,8 +906,8 @@ const DetailPanel = ({ paper, onClose }) => {
                 }}
                 disabled={extractingText || !!structuredContent}
                 className={`px-4 py-2 rounded text-sm flex items-center gap-2 transition-colors ${structuredContent
-                    ? 'bg-gray-100 hover:bg-gray-200 text-black border border-gray-300'
-                    : 'bg-black hover:bg-gray-800 text-white'
+                  ? 'bg-gray-100 hover:bg-gray-200 text-black border border-gray-300'
+                  : 'bg-black hover:bg-gray-800 text-white'
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
                 title={structuredContent ? 'Full text already extracted' : 'Extract and format the full paper text'}
               >
@@ -935,8 +935,8 @@ const DetailPanel = ({ paper, onClose }) => {
                   setShowChat(!showChat);
                 }}
                 className={`px-4 py-2 rounded text-sm flex items-center gap-2 transition-colors ${showChat
-                    ? 'bg-gray-100 hover:bg-gray-200 text-black border border-gray-300'
-                    : 'bg-black hover:bg-gray-800 text-white'
+                  ? 'bg-gray-100 hover:bg-gray-200 text-black border border-gray-300'
+                  : 'bg-black hover:bg-gray-800 text-white'
                   }`}
                 title="Ask questions about this paper"
               >
@@ -1112,8 +1112,8 @@ const DetailPanel = ({ paper, onClose }) => {
                   </div>
                   <div className={`flex-1 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
                     <div className={`inline-block p-3 rounded-lg max-w-[85%] ${msg.role === 'user'
-                        ? 'bg-black text-white'
-                        : 'bg-gray-100 text-gray-800'
+                      ? 'bg-black text-white'
+                      : 'bg-gray-100 text-gray-800'
                       }`}>
                       <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</p>
                     </div>
@@ -1428,11 +1428,12 @@ export default function Results() {
         return;
       }
 
-      // No cache, fetch from all APIs (arXiv, CORE, PMC, Semantic Scholar, Google Scholar)
-      console.log('No cache found, fetching from all APIs...');
+      // No cache, fetch from backend (OpenAlex with institutions) + other APIs
+      console.log('No cache found, fetching from backend and other APIs...');
 
-      // Fetch from all sources in parallel
-      const [arxivResponse, coreResponse, pmcResponse, semanticResponse, googleScholarResponse] = await Promise.allSettled([
+      // Fetch from all sources in parallel (including backend OpenAlex endpoint)
+      const [backendResponse, arxivResponse, coreResponse, pmcResponse, semanticResponse, googleScholarResponse] = await Promise.allSettled([
+        searchAPI.fetchPapers(topic, 30).catch(err => ({ status: 'error', error: err })),  // Backend OpenAlex with institutions!
         arxivAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err })),
         coreAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err })),
         pmcAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err })),
@@ -1442,6 +1443,13 @@ export default function Results() {
 
       const allPapersList = [];
       const sources = [];
+
+      // Process backend OpenAlex results (has institutions data!)
+      if (backendResponse.status === 'fulfilled' && backendResponse.value.status === 'success') {
+        allPapersList.push(...backendResponse.value.papers);
+        sources.push('OpenAlex');
+        console.log('OpenAlex papers received (with institutions):', backendResponse.value.papers.length);
+      }
 
       // Process arXiv results
       if (arxivResponse.status === 'fulfilled' && arxivResponse.value.status === 'success') {
@@ -1469,13 +1477,6 @@ export default function Results() {
         allPapersList.push(...semanticResponse.value.papers);
         sources.push('Semantic Scholar');
         console.log('Semantic Scholar papers received:', semanticResponse.value.papers.length);
-      }
-
-      // Process Google Scholar results
-      if (googleScholarResponse.status === 'fulfilled' && googleScholarResponse.value.status === 'success') {
-        allPapersList.push(...googleScholarResponse.value.papers);
-        sources.push('Google Scholar');
-        console.log('Google Scholar papers received:', googleScholarResponse.value.papers.length);
       }
 
       // Process Google Scholar results
@@ -2172,8 +2173,8 @@ export default function Results() {
                         key={page}
                         onClick={() => setCurrentPage(page)}
                         className={`px-3 py-1.5 border rounded ${currentPage === page
-                            ? 'bg-black text-white border-black'
-                            : 'border-gray-300 hover:bg-gray-50'
+                          ? 'bg-black text-white border-black'
+                          : 'border-gray-300 hover:bg-gray-50'
                           }`}
                       >
                         {page}

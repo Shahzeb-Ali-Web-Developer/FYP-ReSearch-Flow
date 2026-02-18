@@ -199,4 +199,7 @@ def _parse_google_scholar_result(result: Dict[str, Any]) -> Optional[Dict[str, A
         logging.warning(f"Error parsing Google Scholar result: {str(e)}")
         return None
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> 19c62c6432f4465bd0724c79e5a8f133d21dc582
