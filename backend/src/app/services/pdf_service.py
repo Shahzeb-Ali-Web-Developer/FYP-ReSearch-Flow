@@ -176,3 +176,158 @@ def get_pdf_text_from_url(pdf_url: str, max_pages: Optional[int] = None) -> Tupl
     
     return (extracted_text, None)
 
+
+def extract_structured_text_from_pdf(pdf_content: bytes, max_pages: Optional[int] = None) -> list:
+    """
+    Extract structured text from PDF using PyMuPDF's dict mode.
+    Analyzes font sizes and styles to classify blocks as heading, subheading, or body.
+    
+    Args:
+        pdf_content: PDF file content as bytes
+        max_pages: Maximum number of pages to process (None for all)
+    
+    Returns:
+        List of structured blocks: [{ "type": "heading"|"subheading"|"body", "text": "..." }]
+    """
+    import re
+    from statistics import median
+    
+    try:
+        doc = fitz.open(stream=pdf_content, filetype="pdf")
+        total_pages = len(doc)
+        pages_to_process = min(max_pages, total_pages) if max_pages else total_pages
+        
+        # First pass: collect all font sizes to determine the median (body) font size
+        all_font_sizes = []
+        raw_blocks = []
+        
+        for page_num in range(pages_to_process):
+            page = doc[page_num]
+            page_dict = page.get_text("dict", sort=True)
+            
+            for block in page_dict.get("blocks", []):
+                if block.get("type") != 0:  # Skip image blocks
+                    continue
+                
+                block_spans = []
+                block_text_parts = []
+                
+                for line in block.get("lines", []):
+                    line_text_parts = []
+                    for span in line.get("spans", []):
+                        text = span.get("text", "").strip()
+                        if not text:
+                            continue
+                        font_size = span.get("size", 10)
+                        font_name = span.get("font", "").lower()
+                        is_bold = "bold" in font_name or "heavy" in font_name or "black" in font_name
+                        
+                        all_font_sizes.append(font_size)
+                        block_spans.append({
+                            "size": font_size,
+                            "bold": is_bold,
+                            "font": font_name,
+                        })
+                        line_text_parts.append(text)
+                    
+                    if line_text_parts:
+                        block_text_parts.append(" ".join(line_text_parts))
+                
+                if block_text_parts and block_spans:
+                    full_text = "\n".join(block_text_parts)
+                    # Use the dominant (most common) font size for the block
+                    avg_size = sum(s["size"] for s in block_spans) / len(block_spans)
+                    any_bold = any(s["bold"] for s in block_spans)
+                    all_bold = all(s["bold"] for s in block_spans)
+                    
+                    raw_blocks.append({
+                        "text": full_text,
+                        "avg_size": avg_size,
+                        "any_bold": any_bold,
+                        "all_bold": all_bold,
+                        "span_count": len(block_spans),
+                    })
+        
+        doc.close()
+        
+        if not raw_blocks or not all_font_sizes:
+            return []
+        
+        # Determine the median font size (this is the body text size)
+        median_size = median(all_font_sizes)
+        
+        # Classify blocks
+        structured_blocks = []
+        
+        for block in raw_blocks:
+            text = block["text"].strip()
+            if not text:
+                continue
+            
+            # Clean excessive whitespace
+            text = re.sub(r'\n{3,}', '\n\n', text)
+            text = re.sub(r' {3,}', ' ', text)
+            
+            avg_size = block["avg_size"]
+            all_bold = block["all_bold"]
+            any_bold = block["any_bold"]
+            
+            # Classification heuristics
+            size_ratio = avg_size / median_size if median_size > 0 else 1.0
+            
+            # Heading: significantly larger font (>= 1.3x median) OR large + bold
+            if size_ratio >= 1.3:
+                block_type = "heading"
+            # Subheading: bold text at roughly body size, short text (likely a section title)
+            elif all_bold and size_ratio >= 1.05 and len(text) < 200:
+                block_type = "subheading"
+            # Also detect common section header patterns even without bold
+            elif size_ratio >= 1.1 and len(text) < 100:
+                block_type = "subheading"
+            else:
+                block_type = "body"
+            
+            # Merge consecutive body blocks that are part of the same paragraph
+            # (short body blocks ending without period likely continue)
+            if (structured_blocks 
+                and structured_blocks[-1]["type"] == "body" 
+                and block_type == "body"
+                and not structured_blocks[-1]["text"].endswith(('.', '!', '?', ':'))
+                and len(structured_blocks[-1]["text"]) < 500):
+                structured_blocks[-1]["text"] += " " + text
+            else:
+                structured_blocks.append({
+                    "type": block_type,
+                    "text": text,
+                })
+        
+        logging.info(f"Extracted {len(structured_blocks)} structured blocks from {pages_to_process} pages")
+        return structured_blocks
+        
+    except Exception as e:
+        logging.error(f"Error extracting structured text from PDF: {str(e)}")
+        return []
+
+
+def get_structured_pdf_text_from_url(pdf_url: str, max_pages: Optional[int] = None) -> Tuple[Optional[list], Optional[str]]:
+    """
+    Download PDF from URL and extract structured text with formatting metadata.
+    
+    Args:
+        pdf_url: URL to PDF file
+        max_pages: Maximum number of pages to process
+    
+    Returns:
+        Tuple of (structured blocks list, error_message)
+        If successful: (blocks, None)
+        If failed: (None, error_message)
+    """
+    pdf_content, download_error = download_pdf(pdf_url)
+    if pdf_content is None:
+        return (None, download_error)
+    
+    structured_blocks = extract_structured_text_from_pdf(pdf_content, max_pages=max_pages)
+    if not structured_blocks:
+        return (None, "Failed to extract structured text from PDF. The PDF may be image-based or corrupted.")
+    
+    return (structured_blocks, None)

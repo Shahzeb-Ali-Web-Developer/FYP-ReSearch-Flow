@@ -1,14 +1,15 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { searchAPI, savedArticlesAPI, arxivAPI, coreAPI, pmcAPI, semanticScholarAPI, googleScholarAPI, APIError } from '../services/api';
-import { 
-  BookOpen, X, FileText, MessageSquare, Code, Download, 
+import {
+  BookOpen, X, FileText, MessageSquare, Code, Download,
   ChevronDown, Plus, Trash2, MoreVertical, ArrowUpDown, BarChart3, CheckSquare, Network,
   Check, Bookmark, Share2, Copy, CheckCircle, Building2, Send, Bot, User
 } from 'lucide-react';
 import SearchDropdown from '../components/SearchDropdown';
 import CitationMesh from '../components/CitationMesh';
 import ArticleNotesModal from '../components/ArticleNotesModal';
+import FormattedPaperContent from '../components/FormattedPaperContent';
 import { ToastContainer, useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -115,7 +116,7 @@ const StatsPanel = ({
     // Calculate stats from papers
     const openAccessCount = papers.filter(p => p.isOpenAccess).length;
     const openAccessPercent = papers.length > 0 ? Math.round((openAccessCount / papers.length) * 100) : 0;
-    
+
     // Group by year
     const yearDistribution = {};
     papers.forEach(p => {
@@ -157,8 +158,8 @@ const StatsPanel = ({
     // Group by type
     const typeCounts = {};
     papers.forEach(p => {
-      const type = p.publicationTypes && p.publicationTypes.length > 0 
-        ? p.publicationTypes[0] 
+      const type = p.publicationTypes && p.publicationTypes.length > 0
+        ? p.publicationTypes[0]
         : 'article';
       typeCounts[type] = (typeCounts[type] || 0) + 1;
     });
@@ -214,14 +215,12 @@ const StatsPanel = ({
           <button
             type="button"
             onClick={onToggleOpenAccess}
-            className={`border border-gray-200 rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer transition-colors ${
-              openAccessOnly ? 'bg-black text-white' : 'bg-white hover:bg-gray-50'
-            }`}
+            className={`border border-gray-200 rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer transition-colors ${openAccessOnly ? 'bg-black text-white' : 'bg-white hover:bg-gray-50'
+              }`}
           >
             <div
-              className={`w-20 h-20 rounded-full border-[10px] flex items-center justify-center mb-2 ${
-                openAccessOnly ? 'border-white' : 'border-gray-300'
-              }`}
+              className={`w-20 h-20 rounded-full border-[10px] flex items-center justify-center mb-2 ${openAccessOnly ? 'border-white' : 'border-gray-300'
+                }`}
             >
               <span className={`text-xl font-bold ${openAccessOnly ? 'text-white' : 'text-black'}`}>
                 {openAccessPercent}%
@@ -269,7 +268,7 @@ const StatsPanel = ({
                       className="rounded border-gray-300"
                     />
                     <div className="flex-1 bg-gray-200 rounded h-4 overflow-hidden">
-                      <div 
+                      <div
                         className={`h-full rounded ${isSelected ? 'bg-black' : 'bg-gray-400'}`}
                         style={{ width: `${width}%` }}
                       />
@@ -411,6 +410,8 @@ const DetailPanel = ({ paper, onClose }) => {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
+  const [structuredContent, setStructuredContent] = useState(null);
+  const [extractingText, setExtractingText] = useState(false);
 
   const abstract = paper.abstract && paper.abstract !== 'N/A' ? paper.abstract : null;
   const abstractPreview = abstract && abstract.length > 300 ? abstract.substring(0, 300) + '...' : abstract;
@@ -436,6 +437,8 @@ const DetailPanel = ({ paper, onClose }) => {
     setShowChat(false);
     setChatMessages([]);
     setChatInput('');
+    setStructuredContent(null);
+    setExtractingText(false);
   }, [paper]);
 
   // Check if article is saved when component mounts or paper changes
@@ -630,25 +633,25 @@ const DetailPanel = ({ paper, onClose }) => {
         // Fallback to Semantic Scholar API (works with any PDF URL)
         response = await semanticScholarAPI.summarizePaper(pdfUrlForExtract);
       }
-      
+
       if (response.status === 'success') {
         // Set summary if available
         if (response.summary) {
           setSummary(response.summary);
         }
-        
+
         // Also set PDF content if returned
         if (response.full_text) {
           setPdfContent(response.full_text);
         }
-        
+
         showToast('PDF extracted and summary generated successfully using AI (GPT-4)', 'success');
       } else {
         showToast('Failed to generate summary', 'error');
       }
     } catch (error) {
       console.error('Error summarizing paper:', error);
-      
+
       // Handle specific PDF not available errors
       if (error.status === 404 || (error.details && error.details.error === 'PDF not available')) {
         const errorMessage = error.details?.message || error.message || 'PDF is not available for this paper.';
@@ -661,13 +664,26 @@ const DetailPanel = ({ paper, onClose }) => {
     } finally {
       setSummarizing(false);
     }
+
+    // After summarization, also fetch structured content for formatted view
+    if (pdfUrlForExtract && !structuredContent) {
+      try {
+        const structuredResponse = await semanticScholarAPI.extractStructuredContent(pdfUrlForExtract);
+        if (structuredResponse.status === 'success' && structuredResponse.blocks) {
+          setStructuredContent(structuredResponse);
+        }
+      } catch (err) {
+        console.log('Structured extraction fallback failed:', err.message);
+        // Not critical - user still has raw text
+      }
+    }
   };
 
   // Handle chat question
   const handleChatSubmit = async (e) => {
     e.preventDefault();
     if (!chatInput.trim() || chatLoading) return;
-    
+
     if (!pdfContent) {
       showToast('Please generate summary first to extract paper content', 'info');
       return;
@@ -675,7 +691,7 @@ const DetailPanel = ({ paper, onClose }) => {
 
     const userQuestion = chatInput.trim();
     setChatInput('');
-    
+
     // Add user message to chat
     const userMessage = { role: 'user', content: userQuestion };
     setChatMessages(prev => [...prev, userMessage]);
@@ -687,7 +703,7 @@ const DetailPanel = ({ paper, onClose }) => {
         role: msg.role,
         content: msg.content
       }));
-      
+
       let response;
       // Use appropriate API based on source
       if (isArxiv) {
@@ -706,7 +722,7 @@ const DetailPanel = ({ paper, onClose }) => {
         // Fallback to Semantic Scholar API (works with any PDF URL)
         response = await semanticScholarAPI.askQuestion(pdfUrlForExtract, userQuestion, history);
       }
-      
+
       if (response.status === 'success' && response.answer) {
         const assistantMessage = { role: 'assistant', content: response.answer };
         setChatMessages(prev => [...prev, assistantMessage]);
@@ -811,11 +827,10 @@ const DetailPanel = ({ paper, onClose }) => {
         </div>
         <button
           onClick={isSaved ? handleOpenNotes : handleSaveArticle}
-          className={`px-4 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
-            isSaved
+          className={`px-4 py-2 rounded text-sm flex items-center gap-2 transition-colors ${isSaved
               ? 'bg-gray-100 hover:bg-gray-200 text-black border border-gray-300'
               : 'bg-black hover:bg-gray-800 text-white'
-          }`}
+            }`}
           title={isSaved ? 'View/Edit Notes' : 'Save Article'}
           disabled={loadingSaved}
         >
@@ -847,11 +862,10 @@ const DetailPanel = ({ paper, onClose }) => {
             <button
               onClick={handleSummarize}
               disabled={summarizing || summary}
-              className={`px-4 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
-                summary
+              className={`px-4 py-2 rounded text-sm flex items-center gap-2 transition-colors ${summary
                   ? 'bg-gray-100 hover:bg-gray-200 text-black border border-gray-300'
                   : 'bg-black hover:bg-gray-800 text-white'
-              } disabled:opacity-50 disabled:cursor-not-allowed`}
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
               title={summary ? 'Summary already generated' : pdfUrlForExtract ? 'Extract PDF and generate AI summary (GPT-4)' : ((isSemanticScholar || isGoogleScholar) && abstract ? 'PDF not available - only abstract available' : 'Extract PDF and generate AI summary')}
             >
               {summarizing ? (
@@ -871,16 +885,59 @@ const DetailPanel = ({ paper, onClose }) => {
                 </>
               )}
             </button>
+            {/* View Full Text button */}
+            {pdfUrlForExtract && (
+              <button
+                onClick={async () => {
+                  if (structuredContent) return; // Already extracted
+                  setExtractingText(true);
+                  try {
+                    const response = await semanticScholarAPI.extractStructuredContent(pdfUrlForExtract);
+                    if (response.status === 'success' && response.blocks) {
+                      setStructuredContent(response);
+                      showToast('Full text extracted and formatted successfully', 'success');
+                    }
+                  } catch (error) {
+                    console.error('Structured extraction error:', error);
+                    showToast(error.message || 'Failed to extract full text', 'error');
+                  } finally {
+                    setExtractingText(false);
+                  }
+                }}
+                disabled={extractingText || !!structuredContent}
+                className={`px-4 py-2 rounded text-sm flex items-center gap-2 transition-colors ${structuredContent
+                    ? 'bg-gray-100 hover:bg-gray-200 text-black border border-gray-300'
+                    : 'bg-black hover:bg-gray-800 text-white'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                title={structuredContent ? 'Full text already extracted' : 'Extract and format the full paper text'}
+              >
+                {extractingText ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
+                    <span>Extracting...</span>
+                  </>
+                ) : structuredContent ? (
+                  <>
+                    <CheckCircle className="w-4 h-4" />
+                    <span>Full Text Loaded</span>
+                  </>
+                ) : (
+                  <>
+                    <FileText className="w-4 h-4" />
+                    <span>View Full Text</span>
+                  </>
+                )}
+              </button>
+            )}
             {pdfContent && summary && (
               <button
                 onClick={() => {
                   setShowChat(!showChat);
                 }}
-                className={`px-4 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
-                  showChat
+                className={`px-4 py-2 rounded text-sm flex items-center gap-2 transition-colors ${showChat
                     ? 'bg-gray-100 hover:bg-gray-200 text-black border border-gray-300'
                     : 'bg-black hover:bg-gray-800 text-white'
-                }`}
+                  }`}
                 title="Ask questions about this paper"
               >
                 <Bot className="w-4 h-4" />
@@ -954,22 +1011,22 @@ const DetailPanel = ({ paper, onClose }) => {
         <div>
           <span className="text-xs text-gray-500 uppercase">Language</span>
           <p className="text-black mt-1">English</p>
-      </div>
+        </div>
 
         <div className="grid grid-cols-2 gap-4">
           {referenceCount > 0 && (
             <div>
               <span className="text-xs text-gray-500 uppercase">Cites</span>
               <p className="text-black mt-1">{referenceCount.toLocaleString()}</p>
-          </div>
-        )}
+            </div>
+          )}
           {citationCount > 0 && (
             <div>
               <span className="text-xs text-gray-500 uppercase">Cited by</span>
               <p className="text-black mt-1">{citationCount.toLocaleString()}</p>
-          </div>
-        )}
-      </div>
+            </div>
+          )}
+        </div>
 
         {isOpenAccess && (
           <div>
@@ -988,7 +1045,7 @@ const DetailPanel = ({ paper, onClose }) => {
                   className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm border border-gray-300"
                 >
                   {field}
-        </span>
+                </span>
               ))}
             </div>
           </div>
@@ -1011,14 +1068,14 @@ const DetailPanel = ({ paper, onClose }) => {
         {paper.url && paper.url !== 'N/A' && (
           <div>
             <span className="text-xs text-gray-500 uppercase">URL</span>
-          <a
-            href={paper.url}
-            target="_blank"
-            rel="noopener noreferrer"
+            <a
+              href={paper.url}
+              target="_blank"
+              rel="noopener noreferrer"
               className="text-black hover:text-gray-700 mt-1 block break-all underline"
-          >
+            >
               {paper.url}
-          </a>
+            </a>
           </div>
         )}
       </div>
@@ -1030,7 +1087,7 @@ const DetailPanel = ({ paper, onClose }) => {
             <Bot className="w-5 h-5 text-purple-600" />
             <h3 className="text-base font-semibold text-black">Ask about this paper</h3>
           </div>
-          
+
           {/* Chat Messages */}
           <div className="bg-white border border-gray-200 rounded-lg p-4 max-h-[400px] overflow-y-auto mb-3 space-y-4">
             {chatMessages.length === 0 ? (
@@ -1045,9 +1102,8 @@ const DetailPanel = ({ paper, onClose }) => {
                   key={idx}
                   className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
                 >
-                  <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                    msg.role === 'user' ? 'bg-black text-white' : 'bg-purple-100 text-purple-600'
-                  }`}>
+                  <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${msg.role === 'user' ? 'bg-black text-white' : 'bg-purple-100 text-purple-600'
+                    }`}>
                     {msg.role === 'user' ? (
                       <User className="w-4 h-4" />
                     ) : (
@@ -1055,11 +1111,10 @@ const DetailPanel = ({ paper, onClose }) => {
                     )}
                   </div>
                   <div className={`flex-1 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
-                    <div className={`inline-block p-3 rounded-lg max-w-[85%] ${
-                      msg.role === 'user'
+                    <div className={`inline-block p-3 rounded-lg max-w-[85%] ${msg.role === 'user'
                         ? 'bg-black text-white'
                         : 'bg-gray-100 text-gray-800'
-                    }`}>
+                      }`}>
                       <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</p>
                     </div>
                   </div>
@@ -1081,7 +1136,7 @@ const DetailPanel = ({ paper, onClose }) => {
               </div>
             )}
           </div>
-          
+
           {/* Chat Input */}
           <form onSubmit={handleChatSubmit} className="flex gap-2">
             <input
@@ -1140,24 +1195,32 @@ const DetailPanel = ({ paper, onClose }) => {
         </div>
       )}
 
-      {/* Full PDF Content Display */}
-      {pdfContent && (
-        <div className="p-4 border-t-2 border-gray-300 bg-gray-50">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <FileText className="w-5 h-5 text-black" />
-              <h3 className="text-base font-semibold text-black">Extracted PDF Content</h3>
+      {/* Full PDF Content Display - Formatted or Raw */}
+      {(structuredContent || pdfContent) && (
+        structuredContent ? (
+          <FormattedPaperContent
+            blocks={structuredContent.blocks}
+            rawText={pdfContent}
+            totalCharacters={structuredContent.total_characters}
+          />
+        ) : (
+          <div className="p-4 border-t-2 border-gray-300 bg-gray-50">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-black" />
+                <h3 className="text-base font-semibold text-black">Extracted PDF Content</h3>
+              </div>
+              <span className="text-xs text-gray-500 font-medium">
+                {pdfContent.length.toLocaleString()} characters | {pdfContent.split(/\s+/).length.toLocaleString()} words
+              </span>
             </div>
-            <span className="text-xs text-gray-500 font-medium">
-              {pdfContent.length.toLocaleString()} characters | {pdfContent.split(/\s+/).length.toLocaleString()} words
-            </span>
-          </div>
-          <div className="bg-white border-2 border-gray-300 rounded-lg p-4 max-h-[600px] overflow-y-auto shadow-inner">
-            <div className="text-sm text-gray-800 whitespace-pre-wrap font-sans leading-relaxed">
-              {pdfContent}
+            <div className="bg-white border-2 border-gray-300 rounded-lg p-4 max-h-[600px] overflow-y-auto shadow-inner">
+              <div className="text-sm text-gray-800 whitespace-pre-wrap font-sans leading-relaxed">
+                {pdfContent}
+              </div>
             </div>
           </div>
-        </div>
+        )
       )}
 
       {/* Toast Container */}
@@ -1202,7 +1265,7 @@ export default function Results() {
   // Sorting state
   const [sortOption, setSortOption] = useState('relevance');
   const [showSortDropdown, setShowSortDropdown] = useState(false);
-  
+
   // Export dropdown state
   const [showExportDropdown, setShowExportDropdown] = useState(false);
 
@@ -1223,7 +1286,7 @@ export default function Results() {
     return initialFilters;
   });
   const [searchQuery, setSearchQuery] = useState(topic || '');
-  
+
   // Stats panel filter state
   const [selectedYears, setSelectedYears] = useState([]);
   const [selectedTopics, setSelectedTopics] = useState([]);
@@ -1234,11 +1297,11 @@ export default function Results() {
 
   // Check if papers exist in Supabase for this topic (with 3-day freshness check)
   const CACHE_MAX_AGE_DAYS = 3;
-  
+
   const checkCache = async (query) => {
     const normalizedQuery = query?.toLowerCase().trim() || '';
     console.log('Checking Supabase for topic:', normalizedQuery);
-    
+
     try {
       const { data, error } = await supabase
         .from('research_papers')
@@ -1250,7 +1313,7 @@ export default function Results() {
         console.log('Supabase lookup error:', error.message);
         return null;
       }
-      
+
       if (!data || data.length === 0) {
         console.log('No papers found in Supabase for this topic');
         return null;
@@ -1261,10 +1324,10 @@ export default function Results() {
         const rowDate = new Date(row.inserted_at);
         return rowDate > latest ? rowDate : latest;
       }, new Date(0));
-      
+
       const ageInDays = (Date.now() - mostRecent.getTime()) / (1000 * 60 * 60 * 24);
       console.log('Cache age:', ageInDays.toFixed(1), 'days');
-      
+
       if (ageInDays > CACHE_MAX_AGE_DAYS) {
         console.log('Cache is stale (>', CACHE_MAX_AGE_DAYS, 'days), fetching fresh data');
         // Keep old data, will add new data alongside it
@@ -1272,7 +1335,7 @@ export default function Results() {
       }
 
       console.log('Found fresh papers in Supabase:', data.length);
-      
+
       // Map database columns back to expected paper format
       const papers = data.map(row => ({
         paperId: row.paperid,
@@ -1292,7 +1355,7 @@ export default function Results() {
         externalIds: row.externalids,
         source: row.source
       }));
-      
+
       return { papers, results_count: papers.length };
     } catch (err) {
       console.log('Supabase unavailable:', err.message);
@@ -1304,7 +1367,7 @@ export default function Results() {
   const saveToCache = async (query, papers) => {
     const normalizedQuery = query?.toLowerCase().trim() || '';
     console.log('Saving papers to Supabase:', papers.length, 'for topic:', normalizedQuery);
-    
+
     try {
       // Map papers to match your table columns
       const papersToSave = papers.map(paper => ({
@@ -1331,7 +1394,7 @@ export default function Results() {
       const { error } = await supabase
         .from('research_papers')
         .insert(papersToSave);
-      
+
       if (error) {
         console.log('Error saving to Supabase:', error.message);
       } else {
@@ -1351,7 +1414,7 @@ export default function Results() {
     try {
       // First, check if we have cached results
       const cachedData = await checkCache(topic);
-      
+
       if (cachedData && cachedData.papers && cachedData.papers.length > 0) {
         console.log('Using cached results:', cachedData.papers.length, 'papers');
         setAllPapers(cachedData.papers);
@@ -1367,7 +1430,7 @@ export default function Results() {
 
       // No cache, fetch from all APIs (arXiv, CORE, PMC, Semantic Scholar, Google Scholar)
       console.log('No cache found, fetching from all APIs...');
-      
+
       // Fetch from all sources in parallel
       const [arxivResponse, coreResponse, pmcResponse, semanticResponse, googleScholarResponse] = await Promise.allSettled([
         arxivAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err })),
@@ -1376,52 +1439,52 @@ export default function Results() {
         semanticScholarAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err })),
         googleScholarAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err }))
       ]);
-      
+
       const allPapersList = [];
       const sources = [];
-      
+
       // Process arXiv results
       if (arxivResponse.status === 'fulfilled' && arxivResponse.value.status === 'success') {
         allPapersList.push(...arxivResponse.value.papers);
         sources.push('arXiv');
         console.log('arXiv papers received:', arxivResponse.value.papers.length);
       }
-      
+
       // Process CORE results
       if (coreResponse.status === 'fulfilled' && coreResponse.value.status === 'success') {
         allPapersList.push(...coreResponse.value.papers);
         sources.push('CORE');
         console.log('CORE papers received:', coreResponse.value.papers.length);
       }
-      
+
       // Process PMC results
       if (pmcResponse.status === 'fulfilled' && pmcResponse.value.status === 'success') {
         allPapersList.push(...pmcResponse.value.papers);
         sources.push('PMC');
         console.log('PMC papers received:', pmcResponse.value.papers.length);
       }
-      
+
       // Process Semantic Scholar results
       if (semanticResponse.status === 'fulfilled' && semanticResponse.value.status === 'success') {
         allPapersList.push(...semanticResponse.value.papers);
         sources.push('Semantic Scholar');
         console.log('Semantic Scholar papers received:', semanticResponse.value.papers.length);
       }
-      
+
       // Process Google Scholar results
       if (googleScholarResponse.status === 'fulfilled' && googleScholarResponse.value.status === 'success') {
         allPapersList.push(...googleScholarResponse.value.papers);
         sources.push('Google Scholar');
         console.log('Google Scholar papers received:', googleScholarResponse.value.papers.length);
       }
-      
+
       // Process Google Scholar results
       if (googleScholarResponse.status === 'fulfilled' && googleScholarResponse.value.status === 'success') {
         allPapersList.push(...googleScholarResponse.value.papers);
         sources.push('Google Scholar');
         console.log('Google Scholar papers received:', googleScholarResponse.value.papers.length);
       }
-      
+
       if (allPapersList.length > 0) {
         console.log('Total papers received:', allPapersList.length);
         setAllPapers(allPapersList);
@@ -1430,7 +1493,7 @@ export default function Results() {
           total: allPapersList.length,
           sources: sources
         });
-        
+
         // Save to cache for future use
         await saveToCache(topic, allPapersList);
       } else {
@@ -1485,7 +1548,7 @@ export default function Results() {
 
   const applyFilters = useCallback(() => {
     console.log('applyFilters called:', { allPapersCount: allPapers.length });
-    
+
     if (allPapers.length === 0) {
       console.log('No papers to filter');
       setPapers([]);
@@ -1500,18 +1563,18 @@ export default function Results() {
     filters.forEach(filter => {
       const filterValue = filter.value ? filter.value.toString().trim() : '';
       if (!filterValue) return; // Skip empty filters
-      
+
       hasActiveFilters = true;
 
       if (filter.field === 'title_abstract') {
         const searchTerm = filter.value.toLowerCase();
         if (filter.operator === 'includes') {
-          filtered = filtered.filter(p => 
+          filtered = filtered.filter(p =>
             (p.title && p.title.toLowerCase().includes(searchTerm)) ||
             (p.abstract && p.abstract.toLowerCase().includes(searchTerm))
           );
         } else if (filter.operator === 'equals') {
-          filtered = filtered.filter(p => 
+          filtered = filtered.filter(p =>
             (p.title && p.title.toLowerCase() === searchTerm) ||
             (p.abstract && p.abstract.toLowerCase() === searchTerm)
           );
@@ -1534,11 +1597,11 @@ export default function Results() {
       } else if (filter.field === 'venue') {
         const venueTerm = filter.value.toLowerCase();
         if (filter.operator === 'includes') {
-          filtered = filtered.filter(p => 
+          filtered = filtered.filter(p =>
             p.venue && p.venue.toLowerCase().includes(venueTerm)
           );
         } else if (filter.operator === 'equals') {
-          filtered = filtered.filter(p => 
+          filtered = filtered.filter(p =>
             p.venue && p.venue.toLowerCase() === venueTerm
           );
         }
@@ -1551,23 +1614,23 @@ export default function Results() {
     }
 
     if (selectedTopics.length > 0) {
-      filtered = filtered.filter(p => 
+      filtered = filtered.filter(p =>
         p.fieldsOfStudy && p.fieldsOfStudy.some(field => selectedTopics.includes(field))
       );
     }
 
     if (selectedTypes.length > 0) {
       filtered = filtered.filter(p => {
-        const type = p.publicationTypes && p.publicationTypes.length > 0 
-          ? p.publicationTypes[0] 
+        const type = p.publicationTypes && p.publicationTypes.length > 0
+          ? p.publicationTypes[0]
           : 'article';
         return selectedTypes.includes(type);
       });
     }
 
     if (selectedInstitutions.length > 0) {
-      filtered = filtered.filter(p => 
-        p.institutions && Array.isArray(p.institutions) && 
+      filtered = filtered.filter(p =>
+        p.institutions && Array.isArray(p.institutions) &&
         p.institutions.some(inst => selectedInstitutions.includes(inst))
       );
     }
@@ -1579,13 +1642,13 @@ export default function Results() {
     // If no active filters at all, show all papers
     const hasStatsFilters =
       openAccessOnly || selectedYears.length > 0 || selectedTopics.length > 0 || selectedTypes.length > 0 || selectedInstitutions.length > 0;
-    console.log('Filter result:', { 
-      hasActiveFilters, 
-      hasStatsFilters, 
+    console.log('Filter result:', {
+      hasActiveFilters,
+      hasStatsFilters,
       filteredCount: filtered.length,
       allPapersCount: allPapers.length
     });
-    
+
     let result;
     if (!hasActiveFilters && !hasStatsFilters) {
       console.log('No active filters, showing all papers');
@@ -1594,7 +1657,7 @@ export default function Results() {
       console.log('Applying filters, showing', filtered.length, 'filtered papers');
       result = filtered;
     }
-    
+
     // Apply sorting
     const sortedResult = sortPapers(result, sortOption);
     setPapers(sortedResult);
@@ -1608,13 +1671,13 @@ export default function Results() {
     }
 
     setSearchQuery(topic);
-    
+
     // Update the filter input to match the new topic
     setFilters(prevFilters => {
       const titleFilter = prevFilters.find(f => f.field === 'title_abstract');
       if (titleFilter) {
         // Update existing title_abstract filter
-        return prevFilters.map(f => 
+        return prevFilters.map(f =>
           f.field === 'title_abstract' ? { ...f, value: topic } : f
         );
       } else {
@@ -1622,7 +1685,7 @@ export default function Results() {
         return [createFilter('title_abstract', 'includes', topic), ...prevFilters];
       }
     });
-    
+
     fetchPapers();
   }, [topic]);
 
@@ -1659,7 +1722,7 @@ export default function Results() {
   };
 
   const updateFilter = (filterId, field, operator, value) => {
-    setFilters(filters.map(f => 
+    setFilters(filters.map(f =>
       f.id === filterId ? { ...f, field, operator, value } : f
     ));
   };
@@ -1687,7 +1750,7 @@ export default function Results() {
     const excelData = papers.map((paper, index) => ({
       'S.No': index + 1,
       'Title': paper.title || 'N/A',
-      'Authors': Array.isArray(paper.authors) 
+      'Authors': Array.isArray(paper.authors)
         ? paper.authors.map(a => typeof a === 'string' ? a : a.name || a).join('; ')
         : 'N/A',
       'Year': paper.year || 'N/A',
@@ -1695,11 +1758,11 @@ export default function Results() {
       'Citation Count': paper.citationCount || 0,
       'Reference Count': paper.referenceCount || 0,
       'Abstract': paper.abstract || 'N/A',
-      'Fields of Study': Array.isArray(paper.fieldsOfStudy) 
-        ? paper.fieldsOfStudy.join('; ') 
+      'Fields of Study': Array.isArray(paper.fieldsOfStudy)
+        ? paper.fieldsOfStudy.join('; ')
         : 'N/A',
-      'Publication Types': Array.isArray(paper.publicationTypes) 
-        ? paper.publicationTypes.join('; ') 
+      'Publication Types': Array.isArray(paper.publicationTypes)
+        ? paper.publicationTypes.join('; ')
         : 'N/A',
       'DOI': paper.externalIds?.DOI || paper.externalIds?.doi || 'N/A',
       'URL': paper.url || 'N/A',
@@ -1769,13 +1832,13 @@ export default function Results() {
 
     // Create PDF document (landscape for more columns)
     const doc = new jsPDF('landscape', 'mm', 'a4');
-    
+
     // Add title
     const sanitizedTopic = (topic || 'Research Papers').slice(0, 50);
     doc.setFontSize(18);
     doc.setFont('helvetica', 'bold');
     doc.text(`Research Papers: ${sanitizedTopic}`, 14, 15);
-    
+
     // Add metadata
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
@@ -1787,7 +1850,7 @@ export default function Results() {
     const tableData = papers.map((paper, index) => [
       index + 1,
       (paper.title || 'N/A').slice(0, 80) + ((paper.title?.length > 80) ? '...' : ''),
-      Array.isArray(paper.authors) 
+      Array.isArray(paper.authors)
         ? paper.authors.slice(0, 3).map(a => typeof a === 'string' ? a : a.name || a).join(', ') + (paper.authors.length > 3 ? '...' : '')
         : 'N/A',
       paper.year || 'N/A',
@@ -1860,8 +1923,8 @@ export default function Results() {
         <div className="max-w-7xl mx-auto px-4 py-3">
           {/* Dropdown Row */}
           <div className="flex items-center gap-2 mb-2">
-            <SearchDropdown 
-              topic={topic} 
+            <SearchDropdown
+              topic={topic}
               searchQuery={searchQuery}
             />
           </div>
@@ -1929,22 +1992,22 @@ export default function Results() {
                       <Plus className="w-4 h-4" />
                     </button>
                     {filters.length > 1 && (
-            <button
+                      <button
                         onClick={() => removeFilter(filter.id)}
                         className="p-2 border border-gray-300 rounded hover:bg-gray-50"
-            >
+                      >
                         <Trash2 className="w-4 h-4 text-gray-600" />
-            </button>
+                      </button>
                     )}
                   </>
                 )}
               </React.Fragment>
             ))}
           </div>
-          </div>
         </div>
+      </div>
 
-        {/* Main Content */}
+      {/* Main Content */}
       <div className="flex">
         {/* Left Column - Works List */}
         <div className="flex-1 overflow-y-auto bg-white">
@@ -1965,7 +2028,7 @@ export default function Results() {
                 )}
                 {/* Sort Dropdown */}
                 <div className="relative sort-dropdown-container">
-                  <button 
+                  <button
                     onClick={() => setShowSortDropdown(!showSortDropdown)}
                     className={`p-1.5 hover:bg-gray-100 rounded flex items-center gap-1 ${showSortDropdown ? 'bg-gray-100' : ''}`}
                     title="Sort results"
@@ -1973,7 +2036,7 @@ export default function Results() {
                     <ArrowUpDown className="w-4 h-4 text-gray-600" />
                     <ChevronDown className={`w-3 h-3 text-gray-600 transition-transform ${showSortDropdown ? 'rotate-180' : ''}`} />
                   </button>
-                  
+
                   {/* Dropdown Menu */}
                   {showSortDropdown && (
                     <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
@@ -1987,9 +2050,8 @@ export default function Results() {
                             setSortOption(option.value);
                             setShowSortDropdown(false);
                           }}
-                          className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center justify-between ${
-                            sortOption === option.value ? 'bg-gray-50 text-black font-medium' : 'text-gray-700'
-                          }`}
+                          className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center justify-between ${sortOption === option.value ? 'bg-gray-50 text-black font-medium' : 'text-gray-700'
+                            }`}
                         >
                           <span>{option.label}</span>
                           {sortOption === option.value && (
@@ -2000,10 +2062,10 @@ export default function Results() {
                     </div>
                   )}
                 </div>
-                
+
                 {/* Export Dropdown */}
                 <div className="relative export-dropdown-container">
-                  <button 
+                  <button
                     onClick={() => setShowExportDropdown(!showExportDropdown)}
                     className={`p-1.5 hover:bg-gray-100 rounded flex items-center gap-1 ${showExportDropdown ? 'bg-gray-100' : ''}`}
                     title="Export results"
@@ -2011,7 +2073,7 @@ export default function Results() {
                     <Download className="w-4 h-4 text-gray-600" />
                     <ChevronDown className={`w-3 h-3 text-gray-600 transition-transform ${showExportDropdown ? 'rotate-180' : ''}`} />
                   </button>
-                  
+
                   {/* Export Dropdown Menu */}
                   {showExportDropdown && (
                     <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
@@ -2045,41 +2107,41 @@ export default function Results() {
                   <MoreVertical className="w-4 h-4 text-gray-600" />
                 </button>
               </div>
-          </div>
+            </div>
 
-          {/* Loading State */}
-          {loading && (
-            <div className="flex flex-col items-center justify-center py-20">
+            {/* Loading State */}
+            {loading && (
+              <div className="flex flex-col items-center justify-center py-20">
                 <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-black mb-4"></div>
                 <p className="text-black text-lg">Searching research papers...</p>
                 <p className="text-gray-600 text-sm mt-2">This may take a few moments</p>
-            </div>
-          )}
+              </div>
+            )}
 
-          {/* Error State */}
-          {error && !loading && (
+            {/* Error State */}
+            {error && !loading && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center m-4">
                 <p className="text-red-700 text-lg mb-4">{error}</p>
-              <button
-                onClick={fetchPapers}
+                <button
+                  onClick={fetchPapers}
                   className="px-6 py-2 bg-black text-white rounded hover:bg-gray-800 transition-colors"
-              >
-                Try Again
-              </button>
-            </div>
-          )}
+                >
+                  Try Again
+                </button>
+              </div>
+            )}
 
-          {/* Debug Info - Remove in production */}
-          {!loading && (
-            <div className="p-2 bg-gray-100 text-xs m-4 rounded">
-              Debug: loading={loading ? 'true' : 'false'}, error={error ? 'yes' : 'no'}, 
-              papers={papers.length}, allPapers={allPapers.length}, 
-              currentPapers={currentPapers.length}, currentPage={currentPage}
-            </div>
-          )}
+            {/* Debug Info - Remove in production */}
+            {!loading && (
+              <div className="p-2 bg-gray-100 text-xs m-4 rounded">
+                Debug: loading={loading ? 'true' : 'false'}, error={error ? 'yes' : 'no'},
+                papers={papers.length}, allPapers={allPapers.length},
+                currentPapers={currentPapers.length}, currentPage={currentPage}
+              </div>
+            )}
 
             {/* Results List */}
-          {!loading && !error && papers.length > 0 && (
+            {!loading && !error && papers.length > 0 && (
               <>
                 <div className="border-b border-gray-200">
                   {currentPapers.map((paper, index) => {
@@ -2093,7 +2155,7 @@ export default function Results() {
                       />
                     );
                   })}
-            </div>
+                </div>
 
                 {/* Pagination */}
                 {totalPages > 1 && (
@@ -2109,11 +2171,10 @@ export default function Results() {
                       <button
                         key={page}
                         onClick={() => setCurrentPage(page)}
-                        className={`px-3 py-1.5 border rounded ${
-                          currentPage === page
+                        className={`px-3 py-1.5 border rounded ${currentPage === page
                             ? 'bg-black text-white border-black'
                             : 'border-gray-300 hover:bg-gray-50'
-                        }`}
+                          }`}
                       >
                         {page}
                       </button>
@@ -2129,22 +2190,22 @@ export default function Results() {
                   </div>
                 )}
               </>
-          )}
+            )}
 
-          {/* No Results */}
-          {!loading && !error && papers.length === 0 && (
-            <div className="text-center py-20">
-              <BookOpen className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            {/* No Results */}
+            {!loading && !error && papers.length === 0 && (
+              <div className="text-center py-20">
+                <BookOpen className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                 <p className="text-gray-600 text-lg">No papers found for this topic</p>
-            </div>
-          )}
-        </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Right Column - Stats Panel */}
         {showStatsPanel && (
-          <StatsPanel 
-            papers={papers} 
+          <StatsPanel
+            papers={papers}
             stats={stats}
             onClose={() => setShowStatsPanel(false)}
             selectedYears={selectedYears}
@@ -2178,7 +2239,7 @@ export default function Results() {
             onClose={() => setShowCitationMesh(false)}
             onNodeClick={(nodeData) => {
               // Find the paper in allPapers and show its details
-              const paper = allPapers.find(p => 
+              const paper = allPapers.find(p =>
                 (p.paperId || p.id) === nodeData.paperId
               );
               if (paper) {

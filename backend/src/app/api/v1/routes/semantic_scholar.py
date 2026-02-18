@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Body
 from typing import Optional
 import logging
 from ....services.semantic_scholar_service import fetch_semantic_scholar_papers
-from ....services.pdf_service import get_pdf_text_from_url
+from ....services.pdf_service import get_pdf_text_from_url, get_structured_pdf_text_from_url
 from ....services.summarization_service import summarize_paper
 from ....services.chat_service import ask_about_paper
 
@@ -126,6 +126,75 @@ async def extract_pdf_content(
             status_code=500,
             detail={
                 "error": "Failed to extract PDF content",
+                "message": str(e)
+            }
+        )
+
+
+@router.post("/extract-structured")
+async def extract_structured_pdf_content(
+    request_data: dict = Body(...)
+):
+    """
+    Extract structured text content from a PDF with heading/subheading/body classification.
+    Uses font size and style analysis to detect document structure.
+    
+    Request body:
+        {
+            "pdf_url": "https://example.com/paper.pdf"
+        }
+    
+    Returns:
+        Structured blocks with type classification
+    """
+    try:
+        pdf_url = request_data.get("pdf_url")
+        
+        if not pdf_url:
+            raise HTTPException(
+                status_code=400,
+                detail="'pdf_url' must be provided"
+            )
+        
+        logging.info(f"Extracting structured PDF content from: {pdf_url}")
+        
+        structured_blocks, extraction_error = get_structured_pdf_text_from_url(pdf_url, max_pages=None)
+        
+        if structured_blocks is None:
+            error_message = extraction_error or "PDF is not available or could not be processed."
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "PDF not available",
+                    "message": error_message
+                }
+            )
+        
+        # Count block types for metadata
+        heading_count = sum(1 for b in structured_blocks if b["type"] == "heading")
+        subheading_count = sum(1 for b in structured_blocks if b["type"] == "subheading")
+        body_count = sum(1 for b in structured_blocks if b["type"] == "body")
+        total_chars = sum(len(b["text"]) for b in structured_blocks)
+        
+        return {
+            "status": "success",
+            "pdf_url": pdf_url,
+            "blocks": structured_blocks,
+            "block_count": len(structured_blocks),
+            "heading_count": heading_count,
+            "subheading_count": subheading_count,
+            "body_count": body_count,
+            "total_characters": total_chars
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error extracting structured PDF content: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Failed to extract structured PDF content",
                 "message": str(e)
             }
         )

@@ -46,7 +46,7 @@ export const searchAPI = {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       // Network or other errors
       throw new APIError(
         'Network error: Could not connect to server',
@@ -327,7 +327,7 @@ export const arxivAPI = {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       throw new APIError(
         'Network error: Could not connect to server',
         0,
@@ -376,7 +376,7 @@ export const arxivAPI = {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       throw new APIError(
         'Network error: Could not connect to server',
         0,
@@ -425,7 +425,7 @@ export const arxivAPI = {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       throw new APIError(
         'Network error: Could not connect to server',
         0,
@@ -452,7 +452,7 @@ export const arxivAPI = {
       } else {
         throw new APIError('Either arxivId or pdfUrl must be provided', 400);
       }
-      
+
       requestBody.question = question;
       if (conversationHistory && conversationHistory.length > 0) {
         requestBody.conversation_history = conversationHistory;
@@ -481,7 +481,7 @@ export const arxivAPI = {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       throw new APIError(
         'Network error: Could not connect to server',
         0,
@@ -527,7 +527,7 @@ export const coreAPI = {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       throw new APIError(
         'Network error: Could not connect to server',
         0,
@@ -570,7 +570,7 @@ export const coreAPI = {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       throw new APIError(
         'Network error: Could not connect to server',
         0,
@@ -613,7 +613,7 @@ export const coreAPI = {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       throw new APIError(
         'Network error: Could not connect to server',
         0,
@@ -634,12 +634,12 @@ export const coreAPI = {
       if (!pdfUrl) {
         throw new APIError('pdfUrl must be provided', 400);
       }
-      
+
       const requestBody = {
         pdf_url: pdfUrl,
         question: question
       };
-      
+
       if (conversationHistory && conversationHistory.length > 0) {
         requestBody.conversation_history = conversationHistory;
       }
@@ -667,7 +667,7 @@ export const coreAPI = {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       throw new APIError(
         'Network error: Could not connect to server',
         0,
@@ -713,7 +713,7 @@ export const pmcAPI = {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       throw new APIError(
         'Network error: Could not connect to server',
         0,
@@ -756,7 +756,7 @@ export const pmcAPI = {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       throw new APIError(
         'Network error: Could not connect to server',
         0,
@@ -799,7 +799,7 @@ export const pmcAPI = {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       throw new APIError(
         'Network error: Could not connect to server',
         0,
@@ -820,12 +820,12 @@ export const pmcAPI = {
       if (!pdfUrl) {
         throw new APIError('pdfUrl must be provided', 400);
       }
-      
+
       const requestBody = {
         pdf_url: pdfUrl,
         question: question
       };
-      
+
       if (conversationHistory && conversationHistory.length > 0) {
         requestBody.conversation_history = conversationHistory;
       }
@@ -853,7 +853,7 @@ export const pmcAPI = {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       throw new APIError(
         'Network error: Could not connect to server',
         0,
@@ -899,7 +899,7 @@ export const semanticScholarAPI = {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       throw new APIError(
         'Network error: Could not connect to server',
         0,
@@ -942,7 +942,7 @@ export const semanticScholarAPI = {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       throw new APIError(
         'Network error: Could not connect to server',
         0,
@@ -985,7 +985,50 @@ export const semanticScholarAPI = {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
+      throw new APIError(
+        'Network error: Could not connect to server',
+        0,
+        { originalError: error.message }
+      );
+    }
+  },
+
+  /**
+   * Extract structured content from a PDF with heading/subheading/body classification
+   * @param {string} pdfUrl - PDF URL
+   * @returns {Promise<Object>} Structured blocks with type classification
+   */
+  async extractStructuredContent(pdfUrl) {
+    try {
+      if (!pdfUrl) {
+        throw new APIError('pdfUrl must be provided', 400);
+      }
+
+      const response = await fetch(`${API_BASE_URL}/semantic-scholar/extract-structured`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ pdf_url: pdfUrl }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || 'Failed to extract structured content',
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+
       throw new APIError(
         'Network error: Could not connect to server',
         0,
@@ -1002,16 +1045,17 @@ export const semanticScholarAPI = {
    * @returns {Promise<Object>} Answer to the question
    */
   async askQuestion(pdfUrl, question = "", conversationHistory = []) {
+
     try {
       if (!pdfUrl) {
         throw new APIError('pdfUrl must be provided', 400);
       }
-      
+
       const requestBody = {
         pdf_url: pdfUrl,
         question: question
       };
-      
+
       if (conversationHistory && conversationHistory.length > 0) {
         requestBody.conversation_history = conversationHistory;
       }
@@ -1039,7 +1083,7 @@ export const semanticScholarAPI = {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       throw new APIError(
         'Network error: Could not connect to server',
         0,
@@ -1085,7 +1129,7 @@ export const googleScholarAPI = {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       throw new APIError(
         'Network error: Could not connect to server',
         0,
@@ -1128,7 +1172,7 @@ export const googleScholarAPI = {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       throw new APIError(
         'Network error: Could not connect to server',
         0,
@@ -1171,7 +1215,7 @@ export const googleScholarAPI = {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       throw new APIError(
         'Network error: Could not connect to server',
         0,
@@ -1192,12 +1236,12 @@ export const googleScholarAPI = {
       if (!pdfUrl) {
         throw new APIError('pdfUrl must be provided', 400);
       }
-      
+
       const requestBody = {
         pdf_url: pdfUrl,
         question: question
       };
-      
+
       if (conversationHistory && conversationHistory.length > 0) {
         requestBody.conversation_history = conversationHistory;
       }
@@ -1225,7 +1269,7 @@ export const googleScholarAPI = {
       if (error instanceof APIError) {
         throw error;
       }
-      
+
       throw new APIError(
         'Network error: Could not connect to server',
         0,
