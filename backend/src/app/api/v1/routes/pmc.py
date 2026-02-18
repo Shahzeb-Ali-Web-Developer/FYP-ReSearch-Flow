@@ -276,7 +276,4 @@ async def ask_question_endpoint(
             }
         )
 
-<<<<<<< HEAD
 
-=======
->>>>>>> 19c62c6432f4465bd0724c79e5a8f133d21dc582

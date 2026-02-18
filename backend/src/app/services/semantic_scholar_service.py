@@ -197,7 +197,4 @@ def _parse_semantic_scholar_paper(paper_data: Dict[str, Any]) -> Optional[Dict[s
         logging.warning(f"Error parsing Semantic Scholar paper: {str(e)}")
         return None
 
-<<<<<<< HEAD
 
-=======
->>>>>>> 19c62c6432f4465bd0724c79e5a8f133d21dc582

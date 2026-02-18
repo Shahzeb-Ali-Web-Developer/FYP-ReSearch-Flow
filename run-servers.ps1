@@ -6,7 +6,7 @@ Write-Host "  ReSearch Flow - Server Startup" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-$pythonPath = "C:\Users\HP\AppData\Local\Programs\Python\Python312\python.exe"
+$pythonPath = "C:\Python314\python.exe"
 
 # Check Python
 if (-not (Test-Path $pythonPath)) {
@@ -26,7 +26,8 @@ if ($hasFastAPI -match "not found" -or -not $hasFastAPI) {
         exit 1
     }
     Write-Host "✅ Backend dependencies installed" -ForegroundColor Green
-} else {
+}
+else {
     Write-Host "✅ Backend dependencies already installed" -ForegroundColor Green
 }
 
@@ -42,7 +43,8 @@ if (-not (Test-Path "frontend\node_modules\react")) {
         exit 1
     }
     Write-Host "✅ Frontend dependencies installed" -ForegroundColor Green
-} else {
+}
+else {
     Write-Host "✅ Frontend dependencies already installed" -ForegroundColor Green
 }
 

@@ -157,7 +157,4 @@ def _parse_arxiv_entry(entry: ET.Element) -> Optional[Dict[str, Any]]:
         logging.warning(f"Error parsing arXiv entry: {str(e)}")
         return None
 
-<<<<<<< HEAD
 
-=======
->>>>>>> 19c62c6432f4465bd0724c79e5a8f133d21dc582
