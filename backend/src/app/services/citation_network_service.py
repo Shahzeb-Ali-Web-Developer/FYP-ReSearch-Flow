@@ -61,7 +61,7 @@ def build_citation_network(paper_ids: List[str], max_depth: int = 1, max_nodes: 
                     (a.get("author") or {}).get("display_name", "Unknown")
                     for a in (work.get("authorships") or [])[:3]  # First 3 authors
                 ],
-                "venue": (work.get("primary_location") or {}).get("source", {}).get("display_name", "N/A"),
+                "venue": ((work.get("primary_location") or {}).get("source") or {}).get("display_name", "N/A"),
                 "isRoot": True  # Mark initial papers
             }
     
@@ -106,7 +106,7 @@ def build_citation_network(paper_ids: List[str], max_depth: int = 1, max_nodes: 
                             (a.get("author") or {}).get("display_name", "Unknown")
                             for a in (ref_work.get("authorships") or [])[:3]
                         ],
-                        "venue": (ref_work.get("primary_location") or {}).get("source", {}).get("display_name", "N/A"),
+                        "venue": ((ref_work.get("primary_location") or {}).get("source") or {}).get("display_name", "N/A"),
                         "isRoot": False
                     }
                     to_process.append((ref_id, depth + 1))
@@ -214,7 +214,7 @@ def build_citation_network_from_papers(papers: List[Dict[str, Any]], max_depth: 
                             (a.get("author") or {}).get("display_name", "Unknown")
                             for a in (ref_work.get("authorships") or [])[:3]
                         ],
-                        "venue": (ref_work.get("primary_location") or {}).get("source", {}).get("display_name", "N/A"),
+                        "venue": ((ref_work.get("primary_location") or {}).get("source") or {}).get("display_name", "N/A"),
                         "isRoot": False
                     }
                     # Continue exploring from this paper (go deeper) - but only 1 level
