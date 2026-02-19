@@ -7,7 +7,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 class Settings(BaseSettings):
     SUPABASE_URL: str = ""
     SUPABASE_KEY: str = ""
-    OPENROUTER_API_KEY: str = ""
+    OPENAI_API_KEY: str = ""
     CORE_API_KEY: Optional[str] = None
     SERPAPI_API_KEY: Optional[str] = None
     

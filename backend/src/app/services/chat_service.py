@@ -8,10 +8,10 @@ import requests
 from typing import List, Dict, Optional
 from ..core.config import settings
 
-OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 
 
-def ask_about_paper(question: str, paper_text: str, conversation_history: Optional[List[Dict[str, str]]] = None, model: str = "openai/gpt-4o-mini") -> Optional[str]:
+def ask_about_paper(question: str, paper_text: str, conversation_history: Optional[List[Dict[str, str]]] = None, model: str = "gpt-4o") -> Optional[str]:
     """
     Answer a question about a research paper using LLM with conversation context.
     
@@ -24,8 +24,8 @@ def ask_about_paper(question: str, paper_text: str, conversation_history: Option
     Returns:
         LLM's answer as a string, or None if error
     """
-    if not settings.OPENROUTER_API_KEY:
-        logging.error("OPENROUTER_API_KEY not configured")
+    if not settings.OPENAI_API_KEY:
+        logging.error("OPENAI_API_KEY not configured")
         return None
     
     if not question or not question.strip():
@@ -76,12 +76,10 @@ Please answer the question based on the paper content above."""
             "content": user_message
         })
         
-        # Make request to OpenRouter API
+        # Make request to OpenAI API
         headers = {
-            "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/your-repo",
-            "X-Title": "ReSearch Flow"
+            "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+            "Content-Type": "application/json"
         }
         
         payload = {
@@ -92,7 +90,7 @@ Please answer the question based on the paper content above."""
         }
         
         logging.info(f"Asking question about paper using model: {model}")
-        response = requests.post(OPENROUTER_API_URL, headers=headers, json=payload, timeout=60)
+        response = requests.post(OPENAI_API_URL, headers=headers, json=payload, timeout=60)
         response.raise_for_status()
         
         result = response.json()
@@ -113,10 +111,10 @@ Please answer the question based on the paper content above."""
             error_detail = f" - {error_response}"
         except:
             error_detail = f" - Status: {e.response.status_code}"
-        logging.error(f"OpenRouter API HTTP error: {str(e)}{error_detail}")
+        logging.error(f"OpenAI API HTTP error: {str(e)}{error_detail}")
         return None
     except requests.exceptions.RequestException as e:
-        logging.error(f"OpenRouter API request failed: {str(e)}")
+        logging.error(f"OpenAI API request failed: {str(e)}")
         return None
     except Exception as e:
         logging.error(f"Error in chat service: {str(e)}", exc_info=True)
