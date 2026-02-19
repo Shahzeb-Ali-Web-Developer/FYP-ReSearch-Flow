@@ -9,6 +9,7 @@ from typing import Dict, Optional
 from ..core.config import settings
 
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
 def summarize_with_llm(text: str, model: str = "gpt-4o") -> Optional[Dict[str, str]]:
@@ -22,8 +23,24 @@ def summarize_with_llm(text: str, model: str = "gpt-4o") -> Optional[Dict[str, s
     Returns:
         Dictionary with structured summary sections, or None if error
     """
-    if not settings.OPENAI_API_KEY:
-        logging.error("OPENAI_API_KEY not configured")
+    # Decide which LLM provider to use: OpenAI or OpenRouter
+    api_url: Optional[str] = None
+    api_key: Optional[str] = None
+    extra_headers: Dict[str, str] = {}
+
+    if settings.OPENAI_API_KEY:
+        api_url = OPENAI_API_URL
+        api_key = settings.OPENAI_API_KEY
+    elif getattr(settings, "OPENROUTER_API_KEY", None):
+        api_url = OPENROUTER_API_URL
+        api_key = settings.OPENROUTER_API_KEY  # type: ignore[attr-defined]
+        # Recommended headers for OpenRouter (non‑critical if left as defaults)
+        extra_headers = {
+            "HTTP-Referer": "https://fyp-re-search-flow.local",
+            "X-Title": "ReSearch Flow",
+        }
+    else:
+        logging.error("No LLM API key configured (OPENAI_API_KEY or OPENROUTER_API_KEY)")
         return None
     
     if not text or len(text.strip()) < 100:
@@ -54,11 +71,12 @@ Research Paper Content:
 
 Now provide the JSON-formatted summary:"""
 
-        # Make request to OpenAI API
+        # Make request to chosen LLM API
         headers = {
-            "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
+        headers.update(extra_headers)
         
         payload = {
             "model": model,
@@ -77,8 +95,8 @@ Now provide the JSON-formatted summary:"""
             "response_format": {"type": "json_object"}  # Request JSON format
         }
         
-        logging.info(f"Calling OpenAI API with model: {model}")
-        response = requests.post(OPENAI_API_URL, headers=headers, json=payload, timeout=60)
+        logging.info(f"Calling LLM API at {api_url} with model: {model}")
+        response = requests.post(api_url, headers=headers, json=payload, timeout=60)  # type: ignore[arg-type]
         response.raise_for_status()
         
         result = response.json()

@@ -6,7 +6,7 @@ Write-Host "  ReSearch Flow - Server Startup" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-$pythonPath = "C:\Python314\python.exe"
+$pythonPath = "C:\Users\DELL\AppData\Local\Programs\Python\Python313\python.exe"
 
 # Check Python
 if (-not (Test-Path $pythonPath)) {

@@ -9,6 +9,7 @@ from typing import List, Dict, Optional
 from ..core.config import settings
 
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
 def ask_about_paper(question: str, paper_text: str, conversation_history: Optional[List[Dict[str, str]]] = None, model: str = "gpt-4o") -> Optional[str]:
@@ -24,8 +25,23 @@ def ask_about_paper(question: str, paper_text: str, conversation_history: Option
     Returns:
         LLM's answer as a string, or None if error
     """
-    if not settings.OPENAI_API_KEY:
-        logging.error("OPENAI_API_KEY not configured")
+    # Decide which LLM provider to use: OpenAI or OpenRouter
+    api_url: Optional[str] = None
+    api_key: Optional[str] = None
+    extra_headers: Dict[str, str] = {}
+
+    if settings.OPENAI_API_KEY:
+        api_url = OPENAI_API_URL
+        api_key = settings.OPENAI_API_KEY
+    elif getattr(settings, "OPENROUTER_API_KEY", None):
+        api_url = OPENROUTER_API_URL
+        api_key = settings.OPENROUTER_API_KEY  # type: ignore[attr-defined]
+        extra_headers = {
+            "HTTP-Referer": "https://fyp-re-search-flow.local",
+            "X-Title": "ReSearch Flow",
+        }
+    else:
+        logging.error("No LLM API key configured (OPENAI_API_KEY or OPENROUTER_API_KEY)")
         return None
     
     if not question or not question.strip():
@@ -76,11 +92,12 @@ Please answer the question based on the paper content above."""
             "content": user_message
         })
         
-        # Make request to OpenAI API
+        # Make request to chosen LLM API
         headers = {
-            "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
+        headers.update(extra_headers)
         
         payload = {
             "model": model,
@@ -89,8 +106,8 @@ Please answer the question based on the paper content above."""
             "max_tokens": 1500  # Sufficient for detailed answers
         }
         
-        logging.info(f"Asking question about paper using model: {model}")
-        response = requests.post(OPENAI_API_URL, headers=headers, json=payload, timeout=60)
+        logging.info(f"Asking question about paper using model: {model} via {api_url}")
+        response = requests.post(api_url, headers=headers, json=payload, timeout=60)  # type: ignore[arg-type]
         response.raise_for_status()
         
         result = response.json()

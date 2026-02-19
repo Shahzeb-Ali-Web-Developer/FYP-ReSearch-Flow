@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from src.app.api.v1.api_router import api_router
 from src.app.db.client_neo4j import neo4j_client
+from src.app.core.config import settings
 
 
 @asynccontextmanager
@@ -24,10 +25,7 @@ app = FastAPI(
 # CORS middleware - IMPORTANT for frontend connection
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://fyp-re-search-flow.vercel.app",
-        "http://localhost:5173",  # Vite default
-],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
