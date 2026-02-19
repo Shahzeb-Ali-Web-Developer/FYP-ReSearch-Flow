@@ -273,33 +273,153 @@ def extract_structured_text_from_pdf(pdf_content: bytes, max_pages: Optional[int
             any_bold = block["any_bold"]
             
             # Classification heuristics
-            size_ratio = avg_size / median_size if median_size > 0 else 1.0
+            # --- New Score-Based Classification Logic ---
             
-            # Heading: significantly larger font (>= 1.3x median) OR large + bold
-            if size_ratio >= 1.3:
+            # Base score
+            score = 0
+            is_header_candidate = False
+            
+            # Feature 1: Font Size (weighted, but not the only factor)
+            size_ratio = avg_size / median_size if median_size > 0 else 1.0
+            if size_ratio > 1.4: score += 4      # Significantly larger
+            elif size_ratio > 1.15: score += 2   # Moderately larger
+            elif size_ratio > 1.05: score += 1   # Slightly larger
+            
+            # Feature 2: Font Weight & Style
+            if all_bold: score += 3
+            elif any_bold: score += 1
+            
+            # Feature 3: Casing (All Caps is a strong header signal)
+            if text.isupper() and len(text) > 4: score += 2
+             
+            # Feature 4: Length (Headers are rarely long)
+            if len(text) < 50: score += 1
+            if len(text) > 150: score -= 5       # Too long to be a header
+            if len(text) > 300: score -= 10      # Definitely body text
+            
+            # Feature 5: Structural Patterns (Numbering: "1.", "2.1", "IV.")
+            # Matches: "1. Introduction", "2.1 Methods", "IV. Analysis"
+            if re.match(r'^(?:\d+\.|[IVX]+\.)\s+', text): score += 5
+            if re.match(r'^(?:\d+\.\d+)\s+', text): score += 4
+            
+            # Feature 6: Semantic Key Terms (The "Golden" Signal)
+            # Common academic section headers
+            HEADER_KEYWORDS = [
+                'abstract', 'introduction', 'related work', 'background', 
+                'literature review', 'methodology', 'methods', 'experimental setup',
+                'results', 'analysis', 'discussion', 'conclusion', 'conclusions',
+                'references', 'bibliography', 'acknowledgments', 'acknowledgements',
+                'appendix', 'data availability', 'conflict of interest'
+            ]
+            
+            clean_lower = text.lower().strip()
+            # Exact match or "1. Introduction" format
+            if any(k == clean_lower for k in HEADER_KEYWORDS):
+                score += 10
+            elif any(clean_lower.endswith(k) and len(clean_lower) < 30 for k in HEADER_KEYWORDS):
+                score += 8  # e.g. "1. Introduction"
+                
+            # Feature 7: Negative Keywords (Captions, etc.)
+            # "Figure 1", "Table 2" should NOT be headings
+            if re.match(r'^(figure|fig\.|table|chart|graph)\s+\d+', clean_lower):
+                score -= 10
+                is_header_candidate = False
+                
+            # Feature 8: Garbage Collection (Page Numbers, etc.)
+            # If text has NO letters, it's likely a page number or symbol -> NOT a header
+            if not re.search(r'[a-zA-Z]', text):
+                score -= 50
+                is_header_candidate = False
+            
+            # If text is purely numeric (e.g., "13") -> NOT a header
+            if text.strip().isdigit():
+                score -= 50
+                is_header_candidate = False
+                
+            # If text is very short (< 3 chars) and NOT a known Roman numeral -> NOT a header
+            if len(text) < 3 and not re.match(r'^(I|V|X|A|B|C)\.?$', text):
+                score -= 20
+            
+            # Determine Block Type based on Score
+            if score >= 6:
                 block_type = "heading"
-            # Subheading: bold text at roughly body size, short text (likely a section title)
-            elif all_bold and size_ratio >= 1.05 and len(text) < 200:
-                block_type = "subheading"
-            # Also detect common section header patterns even without bold
-            elif size_ratio >= 1.1 and len(text) < 100:
+            elif score >= 3:
                 block_type = "subheading"
             else:
                 block_type = "body"
             
-            # Merge consecutive body blocks that are part of the same paragraph
-            # (short body blocks ending without period likely continue)
+            # Structure Correction: 
+            # If a strict "body" block follows another "body" block and looks like a continuation, merge them.
             if (structured_blocks 
                 and structured_blocks[-1]["type"] == "body" 
                 and block_type == "body"
-                and not structured_blocks[-1]["text"].endswith(('.', '!', '?', ':'))
-                and len(structured_blocks[-1]["text"]) < 500):
+                # Check if previous block didn't end with strong punctuation
+                and not re.search(r'[.!?:]$', structured_blocks[-1]["text"].strip())
+                # And valid length
+                and len(structured_blocks[-1]["text"]) < 1000):
+                
                 structured_blocks[-1]["text"] += " " + text
             else:
                 structured_blocks.append({
                     "type": block_type,
                     "text": text,
                 })
+        
+        # --- Post-Processing: Filtering Orphan Headers (Graphics/Charts) ---
+        # Rule: A Header is valid ONLY IF it is followed by a Body block of sufficient length
+        #       OR another Header. If followed by nothing or short text, it's likely a chart label.
+        
+        final_blocks = []
+        for i, block in enumerate(structured_blocks):
+            if block["type"] in ["heading", "subheading"]:
+                # 1. Always keep "Golden Headers" (Introduction, Methods, etc.)
+                is_golden = False
+                clean_lower = block["text"].lower().strip()
+                if any(k in clean_lower for k in HEADER_KEYWORDS):
+                    is_golden = True
+                
+                if is_golden:
+                    final_blocks.append(block)
+                    continue
+                
+                # 2. Check Context
+                # Look ahead for a "validating" neighbor
+                has_content_follower = False
+                
+                # Check next 3 blocks (to skip over small captions/noise)
+                for j in range(1, 4):
+                    if i + j >= len(structured_blocks):
+                        break
+                    
+                    follower = structured_blocks[i+j]
+                    
+                    # If followed by another header, we are part of a structure -> valid
+                    if follower["type"] in ["heading", "subheading"]:
+                        has_content_follower = True
+                        break
+                    
+                    # If followed by substantial body text -> valid
+                    # "Substantial" = > 60 chars AND not a Figure caption
+                    if follower["type"] == "body":
+                        follower_text_lower = follower["text"].lower().strip()
+                        if (len(follower["text"]) > 60 
+                            and not follower_text_lower.startswith(('figure', 'table', 'chart', 'graph'))):
+                            has_content_follower = True
+                            break
+                
+                if has_content_follower:
+                    final_blocks.append(block)
+                else:
+                    # Downgrade to body (it's likely a chart label or isolated text)
+                    if final_blocks and final_blocks[-1]["type"] == "body":
+                        final_blocks[-1]["text"] += " " + block["text"]
+                    else:
+                        block["type"] = "body"
+                        final_blocks.append(block)
+            else:
+                final_blocks.append(block)
+        
+        structured_blocks = final_blocks
         
         logging.info(f"Extracted {len(structured_blocks)} structured blocks from {pages_to_process} pages")
         return structured_blocks
