@@ -1,9 +1,35 @@
 import logging
+import re
 from typing import List, Dict, Any, Set, Tuple, Optional
 import requests
 from collections import defaultdict
 
 OPENALEX_BASE_URL = "https://api.openalex.org"
+SEMANTIC_SCHOLAR_BASE = "https://api.semanticscholar.org/graph/v1"
+
+
+def _is_semantic_scholar_id(paper_id: str) -> bool:
+    """Check if a paper ID looks like a Semantic Scholar ID (40-char hex string)."""
+    return bool(re.match(r'^[0-9a-f]{40}$', str(paper_id).strip()))
+
+
+def fetch_semantic_scholar_references(paper_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Fetch paper details and references from Semantic Scholar API.
+    Returns paper info with 'references' list of paper IDs.
+    """
+    try:
+        url = f"{SEMANTIC_SCHOLAR_BASE}/paper/{paper_id}"
+        params = {
+            "fields": "paperId,title,authors,year,citationCount,venue,references.paperId,references.title,references.year,references.citationCount,references.authors,references.venue"
+        }
+        headers = {"User-Agent": "ReSearch-Flow/1.0"}
+        resp = requests.get(url, params=params, headers=headers, timeout=15)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        logging.warning(f"Failed to fetch Semantic Scholar paper {paper_id}: {str(e)}")
+        return None
 
 
 def fetch_work_details(work_id: str) -> Optional[Dict[str, Any]]:
@@ -133,23 +159,144 @@ def build_citation_network(paper_ids: List[str], max_depth: int = 1, max_nodes: 
 
 def build_citation_network_from_papers(papers: List[Dict[str, Any]], max_depth: int = 1, max_nodes: int = 50) -> Dict[str, Any]:
     """
-    Build an interconnected citation network from search results (optimized for speed).
-    
-    Strategy:
-    1. Start with root papers (search results)
-    2. Fetch papers they cite (1 level deep)
-    3. Find connections between papers
-    4. Create a useful, interconnected graph quickly
+    Build an interconnected citation network from search results.
+    Auto-detects whether papers are from Semantic Scholar or OpenAlex and uses the correct API.
     """
     logging.info(f"Building citation network from {len(papers)} papers, max_depth={max_depth}, max_nodes={max_nodes}")
     
+    # Detect paper source by checking IDs
+    sample_ids = [p.get("paperId") or p.get("id", "") for p in papers[:3]]
+    use_semantic_scholar = any(_is_semantic_scholar_id(pid) for pid in sample_ids if pid)
+    
+    if use_semantic_scholar:
+        logging.info("Detected Semantic Scholar paper IDs — using Semantic Scholar API for references")
+        return _build_network_semantic_scholar(papers, max_depth, max_nodes)
+    else:
+        logging.info("Using OpenAlex API for references")
+        return _build_network_openalex(papers, max_depth, max_nodes)
+
+
+def _build_network_semantic_scholar(papers: List[Dict[str, Any]], max_depth: int = 1, max_nodes: int = 50) -> Dict[str, Any]:
+    """Build citation network using Semantic Scholar API."""
+    nodes: Dict[str, Dict[str, Any]] = {}
+    edges: List[Dict[str, Any]] = []
+    visited: Set[str] = set()
+    
+    # Step 1: Add root papers
+    for paper in papers:
+        paper_id = paper.get("paperId") or paper.get("id")
+        if not paper_id or paper_id in visited:
+            continue
+        
+        if len(nodes) >= max_nodes:
+            break
+            
+        visited.add(paper_id)
+        
+        # Extract author names (handle both string list and object list)
+        authors = paper.get("authors", [])
+        if authors and isinstance(authors[0], dict):
+            authors = [a.get("name", "Unknown") for a in authors[:3]]
+        else:
+            authors = authors[:3]
+        
+        nodes[paper_id] = {
+            "id": paper_id,
+            "label": (paper.get("title") or "Unknown Title")[:100],
+            "title": paper.get("title", "Unknown Title"),
+            "year": paper.get("year"),
+            "citationCount": paper.get("citationCount", 0),
+            "authors": authors,
+            "venue": paper.get("venue", "N/A"),
+            "isRoot": True
+        }
+    
+    # Step 2: Fetch references for root papers (1 level deep)
+    if max_depth >= 1:
+        root_ids = list(nodes.keys())
+        for paper_id in root_ids:
+            if len(nodes) >= max_nodes:
+                break
+            
+            ref_data = fetch_semantic_scholar_references(paper_id)
+            if not ref_data:
+                continue
+            
+            references = ref_data.get("references") or []
+            for ref in references[:8]:  # Limit refs per paper for speed
+                if len(nodes) >= max_nodes:
+                    break
+                    
+                ref_id = ref.get("paperId")
+                if not ref_id:
+                    continue
+                
+                # Add edge
+                edges.append({
+                    "source": paper_id,
+                    "target": ref_id,
+                    "type": "cites"
+                })
+                
+                # Add referenced paper as node if not already added
+                if ref_id not in visited:
+                    visited.add(ref_id)
+                    
+                    ref_authors = ref.get("authors") or []
+                    if ref_authors and isinstance(ref_authors[0], dict):
+                        ref_authors = [a.get("name", "Unknown") for a in ref_authors[:3]]
+                    else:
+                        ref_authors = ref_authors[:3]
+                    
+                    nodes[ref_id] = {
+                        "id": ref_id,
+                        "label": (ref.get("title") or "Unknown Title")[:100],
+                        "title": ref.get("title", "Unknown Title"),
+                        "year": ref.get("year"),
+                        "citationCount": ref.get("citationCount", 0),
+                        "authors": ref_authors,
+                        "venue": ref.get("venue", "N/A"),
+                        "isRoot": False
+                    }
+    
+    # Step 3: Find cross-references between existing nodes
+    valid_node_ids = set(nodes.keys())
+    edges = [e for e in edges if e["source"] in valid_node_ids and e["target"] in valid_node_ids]
+    
+    # Remove duplicate edges
+    seen_edges = set()
+    unique_edges = []
+    for edge in edges:
+        edge_key = (edge["source"], edge["target"])
+        if edge_key not in seen_edges:
+            seen_edges.add(edge_key)
+            unique_edges.append(edge)
+    
+    nodes_list = list(nodes.values())
+    
+    logging.info(f"Semantic Scholar citation network: {len(nodes_list)} nodes, {len(unique_edges)} edges")
+    
+    return {
+        "nodes": nodes_list,
+        "edges": unique_edges,
+        "stats": {
+            "totalNodes": len(nodes_list),
+            "totalEdges": len(unique_edges),
+            "rootNodes": sum(1 for n in nodes_list if n.get("isRoot", False)),
+            "citationNodes": sum(1 for n in nodes_list if not n.get("isRoot", False))
+        }
+    }
+
+
+def _build_network_openalex(papers: List[Dict[str, Any]], max_depth: int = 1, max_nodes: int = 50) -> Dict[str, Any]:
+    """Build citation network using OpenAlex API (original logic)."""
     nodes: Dict[str, Dict[str, Any]] = {}
     edges: List[Dict[str, Any]] = []
     visited: Set[str] = set()
     root_ids: Set[str] = set()
-    to_process: List[Tuple[str, int, str]] = []  # (paper_id, depth, relation_type)
-    
-    # Step 1: Add root papers (search results)
+    to_process: List[Tuple[str, int, str]] = []
+
+    # Step 1: Add root papers
     for paper in papers:
         paper_id = paper.get("paperId") or paper.get("id")
         if not paper_id or paper_id in visited:
@@ -169,7 +316,7 @@ def build_citation_network_from_papers(papers: List[Dict[str, Any]], max_depth: 
         }
         to_process.append((paper_id, 0, "root"))
     
-    # Step 2: Build comprehensive network by exploring citations
+    # Step 2: Build network by exploring citations
     while to_process and len(nodes) < max_nodes:
         current_id, depth, relation = to_process.pop(0)
         
@@ -180,18 +327,15 @@ def build_citation_network_from_papers(papers: List[Dict[str, Any]], max_depth: 
         if not work:
             continue
         
-        # Get papers this work CITES (forward citations - references)
-        referenced_works = work.get("referenced_works", [])[:10]  # Limit for speed
+        referenced_works = work.get("referenced_works", [])[:10]
         
         for ref_id in referenced_works:
             if len(nodes) >= max_nodes:
                 break
             
-            # Normalize ID
             if ref_id.startswith("https://openalex.org/"):
                 ref_id = ref_id.replace("https://openalex.org/", "")
             
-            # Add edge
             if current_id in nodes:
                 edges.append({
                     "source": current_id,
@@ -199,7 +343,6 @@ def build_citation_network_from_papers(papers: List[Dict[str, Any]], max_depth: 
                     "type": "cites"
                 })
             
-            # Add node if not already added
             if ref_id not in visited:
                 ref_work = fetch_work_details(ref_id)
                 if ref_work:
@@ -217,44 +360,13 @@ def build_citation_network_from_papers(papers: List[Dict[str, Any]], max_depth: 
                         "venue": ((ref_work.get("primary_location") or {}).get("source") or {}).get("display_name", "N/A"),
                         "isRoot": False
                     }
-                    # Continue exploring from this paper (go deeper) - but only 1 level
                     if depth < max_depth - 1:
                         to_process.append((ref_id, depth + 1, "reference"))
     
-    # Step 3: Find additional connections between existing nodes (quick check)
-    # Check if any of our nodes cite each other (cross-references)
-    node_ids = list(nodes.keys())
-    connection_count = len(edges)
-    
-    if connection_count < len(node_ids) * 0.2:  # If graph is very sparse, find more connections
-        logging.info("Finding additional cross-references...")
-        for node_id in node_ids[:10]:  # Check first 10 nodes only
-            if len(edges) >= max_nodes:  # Stop if we have enough edges
-                break
-            
-            work = fetch_work_details(node_id)
-            if work:
-                refs = work.get("referenced_works", [])[:15]
-                for ref in refs:
-                    ref_clean = ref.replace("https://openalex.org/", "")
-                    if ref_clean in nodes and ref_clean != node_id:
-                        # Check if edge doesn't already exist
-                        edge_exists = any(
-                            e["source"] == node_id and e["target"] == ref_clean 
-                            for e in edges
-                        )
-                        if not edge_exists:
-                            edges.append({
-                                "source": node_id,
-                                "target": ref_clean,
-                                "type": "cites"
-                            })
-    
-    # Filter edges to only include valid nodes
+    # Filter and deduplicate edges
     valid_node_ids = set(nodes.keys())
     edges = [e for e in edges if e["source"] in valid_node_ids and e["target"] in valid_node_ids]
     
-    # Remove duplicate edges
     seen_edges = set()
     unique_edges = []
     for edge in edges:
@@ -265,7 +377,7 @@ def build_citation_network_from_papers(papers: List[Dict[str, Any]], max_depth: 
     
     nodes_list = list(nodes.values())
     
-    logging.info(f"Comprehensive citation network built: {len(nodes_list)} nodes, {len(unique_edges)} edges")
+    logging.info(f"OpenAlex citation network: {len(nodes_list)} nodes, {len(unique_edges)} edges")
     
     return {
         "nodes": nodes_list,
@@ -277,3 +389,4 @@ def build_citation_network_from_papers(papers: List[Dict[str, Any]], max_depth: 
             "citationNodes": sum(1 for n in nodes_list if not n.get("isRoot", False))
         }
     }
+
