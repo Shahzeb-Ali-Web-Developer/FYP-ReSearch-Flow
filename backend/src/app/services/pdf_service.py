@@ -4,8 +4,40 @@ Handles downloading and text extraction from PDFs using PyMuPDF.
 """
 import logging
 import requests
+import time
 from typing import Optional, Tuple
+from collections import OrderedDict
 import fitz  # PyMuPDF
+
+
+# ---- In-memory PDF text cache (LRU with TTL) ----
+_PDF_TEXT_CACHE: OrderedDict = OrderedDict()  # key: url -> (text, timestamp)
+_PDF_CACHE_MAX_SIZE = 50  # Max cached PDFs
+_PDF_CACHE_TTL = 3600     # 1 hour TTL
+
+
+def _get_cached_text(url: str) -> Optional[str]:
+    """Get cached PDF text if it exists and hasn't expired."""
+    if url in _PDF_TEXT_CACHE:
+        text, ts = _PDF_TEXT_CACHE[url]
+        if time.time() - ts < _PDF_CACHE_TTL:
+            _PDF_TEXT_CACHE.move_to_end(url)  # Mark as recently used
+            logging.info(f"PDF cache HIT for: {url[:80]}...")
+            return text
+        else:
+            del _PDF_TEXT_CACHE[url]  # Expired
+            logging.info(f"PDF cache EXPIRED for: {url[:80]}...")
+    return None
+
+
+def _set_cached_text(url: str, text: str):
+    """Cache extracted PDF text with LRU eviction."""
+    _PDF_TEXT_CACHE[url] = (text, time.time())
+    _PDF_TEXT_CACHE.move_to_end(url)
+    # Evict oldest if over capacity
+    while len(_PDF_TEXT_CACHE) > _PDF_CACHE_MAX_SIZE:
+        evicted_url, _ = _PDF_TEXT_CACHE.popitem(last=False)
+        logging.info(f"PDF cache EVICTED: {evicted_url[:80]}...")
 
 
 def download_pdf(url: str, timeout: int = 30) -> Tuple[Optional[bytes], Optional[str]]:
@@ -155,7 +187,8 @@ def clean_extracted_text(text: str, preserve_all: bool = True) -> str:
 
 def get_pdf_text_from_url(pdf_url: str, max_pages: Optional[int] = None) -> Tuple[Optional[str], Optional[str]]:
     """
-    Download PDF from URL and extract text.
+    Download PDF from URL and extract text. Uses in-memory cache to avoid
+    re-downloading the same PDF (e.g., when user summarizes then asks questions).
     
     Args:
         pdf_url: URL to PDF file
@@ -166,6 +199,12 @@ def get_pdf_text_from_url(pdf_url: str, max_pages: Optional[int] = None) -> Tupl
         If successful: (text, None)
         If failed: (None, error_message)
     """
+    # Check cache first (only for full extraction, not partial)
+    if max_pages is None:
+        cached = _get_cached_text(pdf_url)
+        if cached is not None:
+            return (cached, None)
+    
     pdf_content, download_error = download_pdf(pdf_url)
     if pdf_content is None:
         return (None, download_error)
@@ -173,6 +212,10 @@ def get_pdf_text_from_url(pdf_url: str, max_pages: Optional[int] = None) -> Tupl
     extracted_text = extract_text_from_pdf(pdf_content, max_pages=max_pages)
     if not extracted_text or len(extracted_text.strip()) < 100:
         return (None, "Failed to extract sufficient text from PDF. The PDF may be image-based, corrupted, or contain only images.")
+    
+    # Cache the result for future use (only full extractions)
+    if max_pages is None:
+        _set_cached_text(pdf_url, extracted_text)
     
     return (extracted_text, None)
 

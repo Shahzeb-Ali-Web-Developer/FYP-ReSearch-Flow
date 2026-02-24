@@ -322,12 +322,6 @@ async def ask_question_endpoint(
         # Get answer from LLM
         answer = ask_about_paper(question.strip(), pdf_text, conversation_history=conversation_history if conversation_history else None)
         
-        if not answer:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to generate answer. Please try again."
-            )
-        
         return {
             "status": "success",
             "pdf_url": pdf_url,

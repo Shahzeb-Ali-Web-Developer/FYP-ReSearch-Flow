@@ -12,7 +12,7 @@ OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
-def ask_about_paper(question: str, paper_text: str, conversation_history: Optional[List[Dict[str, str]]] = None, model: str = "gpt-4o") -> Optional[str]:
+def ask_about_paper(question: str, paper_text: str, conversation_history: Optional[List[Dict[str, str]]] = None, model: str = "gpt-4") -> Optional[str]:
     """
     Answer a question about a research paper using LLM with conversation context.
     
@@ -25,6 +25,7 @@ def ask_about_paper(question: str, paper_text: str, conversation_history: Option
     Returns:
         LLM's answer as a string, or None if error
     """
+
     # Decide which LLM provider to use: OpenAI or OpenRouter
     api_url: Optional[str] = None
     api_key: Optional[str] = None
@@ -43,14 +44,19 @@ def ask_about_paper(question: str, paper_text: str, conversation_history: Option
     else:
         logging.error("No LLM API key configured (OPENAI_API_KEY or OPENROUTER_API_KEY)")
         return None
+
+    if not settings.OPENAI_API_KEY:
+        logging.error("OPENAI_API_KEY not configured")
+        raise ValueError("OPENAI_API_KEY not configured")
+
     
     if not question or not question.strip():
         logging.warning("Empty question provided")
-        return None
+        raise ValueError("Empty question provided")
     
     if not paper_text or len(paper_text.strip()) < 100:
         logging.warning("Paper text too short or empty")
-        return None
+        raise ValueError("Paper text too short or empty for Q&A")
     
     try:
         # Truncate paper text if too long (keep context manageable)
@@ -119,21 +125,23 @@ Please answer the question based on the paper content above."""
             return answer.strip()
         else:
             logging.error(f"Unexpected API response format: {result}")
-            return None
+            raise ValueError(f"Unexpected OpenAI response format")
             
     except requests.exceptions.HTTPError as e:
         error_detail = ""
         try:
             error_response = e.response.json()
-            error_detail = f" - {error_response}"
+            error_detail = error_response.get("error", {}).get("message", str(e))
         except:
-            error_detail = f" - Status: {e.response.status_code}"
-        logging.error(f"OpenAI API HTTP error: {str(e)}{error_detail}")
-        return None
+            error_detail = f"HTTP {e.response.status_code}"
+        logging.error(f"OpenAI API HTTP error: {error_detail}")
+        raise ValueError(f"OpenAI API error: {error_detail}")
     except requests.exceptions.RequestException as e:
         logging.error(f"OpenAI API request failed: {str(e)}")
-        return None
+        raise ValueError(f"OpenAI API connection failed: {str(e)}")
+    except ValueError:
+        raise  # Re-raise ValueError exceptions we created
     except Exception as e:
         logging.error(f"Error in chat service: {str(e)}", exc_info=True)
-        return None
+        raise ValueError(f"Chat error: {str(e)}")
 

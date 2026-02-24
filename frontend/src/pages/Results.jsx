@@ -16,6 +16,8 @@ import { supabase } from '../lib/supabase';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { useSearchHistory } from '../hooks/useSearchHistory';
+import SearchBar from '../components/SearchBar';
 
 // Compact paper card for the list (left column) - arXiv style
 const PaperListItem = ({ paper, isSelected, onClick }) => {
@@ -24,11 +26,14 @@ const PaperListItem = ({ paper, isSelected, onClick }) => {
     ? paper.authors.slice(0, 2).map(a => typeof a === 'string' ? a : a.name || a).join(', ') + (paper.authors.length > 2 ? ', et al.' : '')
     : 'Unknown Authors';
 
-  const isArxiv = paper.source === 'arXiv' || paper.arxiv_id;
-  const isCore = paper.source === 'CORE' || paper.core_id;
-  const isPmc = paper.source === 'PMC' || paper.pmc_id;
-  const isSemanticScholar = paper.source === 'Semantic Scholar' || paper.semantic_scholar_id || (paper.paperId && !paper.arxiv_id && !paper.core_id && !paper.pmc_id && !paper.google_scholar_id);
-  const isGoogleScholar = paper.source === 'Google Scholar' || paper.google_scholar_id;
+  // Use allSources for multi-source display, fallback to single source detection
+  const allSources = paper.allSources || [paper.source || 'Unknown'];
+  const isArxiv = allSources.includes('arXiv') || paper.arxiv_id;
+  const isCore = allSources.includes('CORE') || paper.core_id;
+  const isPmc = allSources.includes('PMC') || paper.pmc_id;
+  const isOpenAlex = allSources.includes('OpenAlex');
+  const isGoogleScholar = allSources.includes('Google Scholar') || paper.google_scholar_id;
+  const isSemanticScholar = allSources.includes('Semantic Scholar') || (paper.semantic_scholar_id && !isArxiv && !isCore && !isPmc && !isOpenAlex && !isGoogleScholar);
   const arxivId = paper.arxiv_id;
   const coreId = paper.core_id;
   const pmcId = paper.pmc_id;
@@ -53,12 +58,13 @@ const PaperListItem = ({ paper, isSelected, onClick }) => {
         </h3>
 
         <div className="text-sm text-gray-600 mb-2">
-          {arxivId && <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded">arXiv:{arxivId}</span>}
-          {coreId && <span className="font-mono text-xs bg-blue-100 px-1.5 py-0.5 rounded text-blue-800">CORE</span>}
-          {pmcId && <span className="font-mono text-xs bg-green-100 px-1.5 py-0.5 rounded text-green-800">PMC:{pmcId}</span>}
-          {isSemanticScholar && !arxivId && !coreId && !pmcId && !isGoogleScholar && <span className="font-mono text-xs bg-purple-100 px-1.5 py-0.5 rounded text-purple-800">Semantic Scholar</span>}
-          {isGoogleScholar && <span className="font-mono text-xs bg-orange-100 px-1.5 py-0.5 rounded text-orange-800">Google Scholar</span>}
-          {year && <span className="ml-2">{year}</span>}
+          {isOpenAlex && <span className="font-mono text-xs bg-amber-100 px-1.5 py-0.5 rounded text-amber-800 mr-1">OpenAlex</span>}
+          {isArxiv && <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded mr-1">{arxivId ? `arXiv:${arxivId}` : 'arXiv'}</span>}
+          {isCore && <span className="font-mono text-xs bg-blue-100 px-1.5 py-0.5 rounded text-blue-800 mr-1">CORE</span>}
+          {isPmc && <span className="font-mono text-xs bg-green-100 px-1.5 py-0.5 rounded text-green-800 mr-1">{pmcId ? `PMC:${pmcId}` : 'PMC'}</span>}
+          {isSemanticScholar && <span className="font-mono text-xs bg-purple-100 px-1.5 py-0.5 rounded text-purple-800 mr-1">Semantic Scholar</span>}
+          {isGoogleScholar && <span className="font-mono text-xs bg-orange-100 px-1.5 py-0.5 rounded text-orange-800 mr-1">Google Scholar</span>}
+          {year && <span className="ml-1">{year}</span>}
           {authors && <span className="ml-2">{authors}</span>}
           {venue && <span className="ml-2"> · {venue}</span>}
         </div>
@@ -420,8 +426,9 @@ const DetailPanel = ({ paper, onClose }) => {
   const isArxiv = paper.source === 'arXiv' || paper.arxiv_id;
   const isCore = paper.source === 'CORE' || paper.core_id;
   const isPmc = paper.source === 'PMC' || paper.pmc_id;
-  const isSemanticScholar = paper.source === 'Semantic Scholar' || paper.semantic_scholar_id || (paper.paperId && !paper.arxiv_id && !paper.core_id && !paper.pmc_id && !paper.google_scholar_id);
+  const isOpenAlex = paper.source === 'OpenAlex';
   const isGoogleScholar = paper.source === 'Google Scholar' || paper.google_scholar_id;
+  const isSemanticScholar = paper.source === 'Semantic Scholar' || (paper.semantic_scholar_id && !isArxiv && !isCore && !isPmc && !isOpenAlex && !isGoogleScholar);
   const arxivId = paper.arxiv_id;
   const coreId = paper.core_id;
   const pmcId = paper.pmc_id;
@@ -712,14 +719,13 @@ const DetailPanel = ({ paper, onClose }) => {
         response = await coreAPI.askQuestion(pdfUrlForExtract, userQuestion, history);
       } else if (isPmc) {
         response = await pmcAPI.askQuestion(pdfUrlForExtract, userQuestion, history);
-      } else if (isSemanticScholar) {
-        // Semantic Scholar API works with any PDF URL from any source
+      } else if (isOpenAlex || isSemanticScholar) {
+        // Both OpenAlex and Semantic Scholar use the same generic PDF Q&A endpoint
         response = await semanticScholarAPI.askQuestion(pdfUrlForExtract, userQuestion, history);
       } else if (isGoogleScholar) {
-        // Google Scholar API works with any PDF URL from any source
         response = await googleScholarAPI.askQuestion(pdfUrlForExtract, userQuestion, history);
       } else {
-        // Fallback to Semantic Scholar API (works with any PDF URL)
+        // Fallback: use generic PDF Q&A endpoint
         response = await semanticScholarAPI.askQuestion(pdfUrlForExtract, userQuestion, history);
       }
 
@@ -1238,6 +1244,181 @@ const DetailPanel = ({ paper, onClose }) => {
   );
 };
 
+// =====================================================
+// Cross-API Deduplication Utility
+// =====================================================
+// Papers from 6 different APIs often refer to the same work.
+// This utility detects duplicates using DOI and title similarity,
+// and merges them to keep the richest metadata.
+
+/**
+ * Normalize a paper title for comparison.
+ * Strips punctuation, collapses whitespace, lowercases.
+ */
+const normalizeTitle = (title) => {
+  if (!title) return '';
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')  // Remove all non-alphanumeric except spaces
+    .replace(/\s+/g, ' ')          // Collapse multiple spaces
+    .trim();
+};
+
+/**
+ * Extract a DOI string from a paper object, checking multiple possible locations.
+ * Returns a normalized lowercase DOI string, or null.
+ */
+const extractDOI = (paper) => {
+  // Check externalIds.DOI or externalIds.doi
+  const extDoi = paper.externalIds?.DOI || paper.externalIds?.doi;
+  if (extDoi) return extDoi.toLowerCase().replace(/^https?:\/\/doi\.org\//i, '');
+
+  // Check paper.doi (some APIs like CORE, PMC set this directly)
+  if (paper.doi) {
+    const d = paper.doi.toLowerCase().replace(/^https?:\/\/doi\.org\//i, '');
+    if (d && d.length > 3) return d;
+  }
+
+  // Check URL for DOI patterns
+  if (paper.url && paper.url.includes('doi.org/')) {
+    const match = paper.url.match(/doi\.org\/(.+)/i);
+    if (match) return match[1].toLowerCase();
+  }
+
+  return null;
+};
+
+/**
+ * Score a paper's metadata richness. Higher = better record to keep.
+ */
+const scorePaperRichness = (paper) => {
+  let score = 0;
+  if (paper.abstract && paper.abstract !== 'N/A' && paper.abstract.length > 50) score += 3;
+  if (paper.citationCount > 0) score += 2;
+  if (paper.year) score += 1;
+  if (paper.openAccessPdf || paper.pdf_url) score += 2;
+  if (paper.isOpenAccess) score += 1;
+  if (paper.authors && paper.authors.length > 0) score += 1;
+  if (paper.venue && paper.venue !== 'N/A') score += 1;
+  if (paper.fieldsOfStudy && paper.fieldsOfStudy.length > 0) score += 1;
+  if (paper.publicationTypes && paper.publicationTypes.length > 0) score += 1;
+  if (paper.externalIds && Object.keys(paper.externalIds).length > 0) score += 1;
+  if (paper.institutions && paper.institutions.length > 0) score += 1;
+  if (paper.referenceCount > 0) score += 1;
+  return score;
+};
+
+/**
+ * Merge two duplicate papers, keeping the richer data and combining sources.
+ * `existing` is the paper already in results, `incoming` is the new one.
+ */
+const mergePapers = (existing, incoming) => {
+  const existingScore = scorePaperRichness(existing);
+  const incomingScore = scorePaperRichness(incoming);
+
+  // Start with the richer record as base
+  const base = incomingScore > existingScore ? { ...incoming } : { ...existing };
+  const other = incomingScore > existingScore ? existing : incoming;
+
+  // Combine sources into an array
+  const existingSources = existing.allSources || [existing.source || 'Unknown'];
+  const incomingSource = incoming.source || 'Unknown';
+  const allSources = [...new Set([...existingSources, incomingSource])];
+  base.allSources = allSources;
+
+  // Keep the best "source" label (primary source for display)
+  // Prefer the base's source since it's the richer record
+
+  // Fill in missing fields from the other record
+  if (!base.abstract || base.abstract === 'N/A' || base.abstract.length < 50) {
+    if (other.abstract && other.abstract !== 'N/A' && other.abstract.length > 50) {
+      base.abstract = other.abstract;
+    }
+  }
+  if (!base.openAccessPdf && other.openAccessPdf) base.openAccessPdf = other.openAccessPdf;
+  if (!base.pdf_url && other.pdf_url) base.pdf_url = other.pdf_url;
+  if (!base.year && other.year) base.year = other.year;
+  if (!base.venue || base.venue === 'N/A') base.venue = other.venue || base.venue;
+  if ((!base.citationCount || base.citationCount === 0) && other.citationCount > 0) {
+    base.citationCount = other.citationCount;
+  }
+  if ((!base.referenceCount || base.referenceCount === 0) && other.referenceCount > 0) {
+    base.referenceCount = other.referenceCount;
+  }
+  if ((!base.fieldsOfStudy || base.fieldsOfStudy.length === 0) && other.fieldsOfStudy?.length > 0) {
+    base.fieldsOfStudy = other.fieldsOfStudy;
+  }
+  if ((!base.publicationTypes || base.publicationTypes.length === 0) && other.publicationTypes?.length > 0) {
+    base.publicationTypes = other.publicationTypes;
+  }
+  if ((!base.institutions || base.institutions.length === 0) && other.institutions?.length > 0) {
+    base.institutions = other.institutions;
+  }
+  if (!base.isOpenAccess && other.isOpenAccess) base.isOpenAccess = true;
+
+  // Merge externalIds
+  if (other.externalIds) {
+    base.externalIds = { ...(other.externalIds || {}), ...(base.externalIds || {}) };
+  }
+
+  return base;
+};
+
+/**
+ * Deduplicate an array of papers using DOI and normalized title matching.
+ * Returns a new array with duplicates merged.
+ *
+ * @param {Array} papers - Array of paper objects from multiple APIs
+ * @returns {Array} Deduplicated array of papers
+ */
+const deduplicatePapers = (papers) => {
+  if (!papers || papers.length === 0) return [];
+
+  const doiMap = new Map();       // DOI → index in result array
+  const titleMap = new Map();     // normalized title → index in result array
+  const result = [];
+
+  let dupeCount = 0;
+
+  for (const paper of papers) {
+    const doi = extractDOI(paper);
+    const normTitle = normalizeTitle(paper.title);
+
+    // Strategy 1: Check DOI match
+    if (doi && doiMap.has(doi)) {
+      const existingIdx = doiMap.get(doi);
+      result[existingIdx] = mergePapers(result[existingIdx], paper);
+      dupeCount++;
+      continue;
+    }
+
+    // Strategy 2: Check normalized title match
+    if (normTitle && normTitle.length > 10 && titleMap.has(normTitle)) {
+      const existingIdx = titleMap.get(normTitle);
+      result[existingIdx] = mergePapers(result[existingIdx], paper);
+      // Also register DOI if the incoming paper has one
+      if (doi) doiMap.set(doi, existingIdx);
+      dupeCount++;
+      continue;
+    }
+
+    // No match — new unique paper
+    const idx = result.length;
+    // Initialize allSources
+    paper.allSources = [paper.source || 'Unknown'];
+    result.push(paper);
+
+    if (doi) doiMap.set(doi, idx);
+    if (normTitle && normTitle.length > 10) titleMap.set(normTitle, idx);
+  }
+
+  if (dupeCount > 0) {
+    console.log(`🔄 Deduplication: removed ${dupeCount} duplicates (${papers.length} → ${result.length})`);
+  }
+
+  return result;
+};
+
 // Filter criteria structure
 const createFilter = (field, operator, value) => ({
   id: Date.now() + Math.random(),
@@ -1250,6 +1431,7 @@ export default function Results() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const topic = searchParams.get('topic');
+  const { recordSearch } = useSearchHistory();
 
   const [allPapers, setAllPapers] = useState([]); // All fetched papers
   const [papers, setPapers] = useState([]); // Filtered papers
@@ -1277,14 +1459,9 @@ export default function Results() {
     { value: 'year', label: 'Year' },
   ];
 
-  // Query builder state
-  const [filters, setFilters] = useState(() => {
-    const initialFilters = [];
-    if (topic) {
-      initialFilters.push(createFilter('title_abstract', 'includes', topic));
-    }
-    return initialFilters;
-  });
+  // Query builder state — starts empty since APIs already handle relevance search
+  // Users can add manual filters to narrow down if needed
+  const [filters, setFilters] = useState([]);
   const [searchQuery, setSearchQuery] = useState(topic || '');
 
   // Stats panel filter state
@@ -1405,15 +1582,32 @@ export default function Results() {
     }
   };
 
-  const fetchPapers = async () => {
+  const fetchPapers = async (skipCache = false) => {
     setLoading(true);
     setError(null);
     setSelectedPaper(null);
     setFromCache(false);
 
     try {
-      // First, check if we have cached results
-      const cachedData = await checkCache(topic);
+      // === OPTIMIZATION: Start cache check AND all API calls simultaneously ===
+      // Instead of: check cache → wait → if miss → call APIs (sequential)
+      // We do:      check cache + call APIs all at once (parallel)
+      // If cache hits, we use cached data and ignore API results.
+
+      const cachePromise = skipCache ? Promise.resolve(null) : checkCache(topic);
+
+      // Prepare all API calls (they start immediately, don't wait for cache)
+      const apiCalls = [
+        { name: 'OpenAlex', promise: searchAPI.fetchPapers(topic, 30).catch(err => ({ status: 'error', error: err })) },
+        { name: 'arXiv', promise: arxivAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err })) },
+        { name: 'CORE', promise: coreAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err })) },
+        { name: 'PMC', promise: pmcAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err })) },
+        { name: 'Semantic Scholar', promise: semanticScholarAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err })) },
+        { name: 'Google Scholar', promise: googleScholarAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err })) },
+      ];
+
+      // Check cache result first
+      const cachedData = await cachePromise;
 
       if (cachedData && cachedData.papers && cachedData.papers.length > 0) {
         console.log('Using cached results:', cachedData.papers.length, 'papers');
@@ -1425,78 +1619,83 @@ export default function Results() {
         });
         setFromCache(true);
         setLoading(false);
-        return;
+        return; // API calls were started but we ignore their results
       }
 
-      // No cache, fetch from backend (OpenAlex with institutions) + other APIs
-      console.log('No cache found, fetching from backend and other APIs...');
+      // === OPTIMIZATION: Progressive Loading ===
+      // Show results from each API as soon as it resolves, instead of
+      // waiting for ALL 6 to finish. User sees first results in 1-2 sec.
+      console.log('No cache found, fetching from all APIs with progressive loading...');
 
-      // Fetch from all sources in parallel (including backend OpenAlex endpoint)
-      const [backendResponse, arxivResponse, coreResponse, pmcResponse, semanticResponse, googleScholarResponse] = await Promise.allSettled([
-        searchAPI.fetchPapers(topic, 30).catch(err => ({ status: 'error', error: err })),  // Backend OpenAlex with institutions!
-        arxivAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err })),
-        coreAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err })),
-        pmcAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err })),
-        semanticScholarAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err })),
-        googleScholarAPI.searchPapers(topic, 20).catch(err => ({ status: 'error', error: err }))
-      ]);
-
-      const allPapersList = [];
+      let progressivePapers = [];
       const sources = [];
+      let completedCount = 0;
 
-      // Process backend OpenAlex results (has institutions data!)
-      if (backendResponse.status === 'fulfilled' && backendResponse.value.status === 'success') {
-        allPapersList.push(...backendResponse.value.papers);
-        sources.push('OpenAlex');
-        console.log('OpenAlex papers received (with institutions):', backendResponse.value.papers.length);
-      }
-
-      // Process arXiv results
-      if (arxivResponse.status === 'fulfilled' && arxivResponse.value.status === 'success') {
-        allPapersList.push(...arxivResponse.value.papers);
-        sources.push('arXiv');
-        console.log('arXiv papers received:', arxivResponse.value.papers.length);
-      }
-
-      // Process CORE results
-      if (coreResponse.status === 'fulfilled' && coreResponse.value.status === 'success') {
-        allPapersList.push(...coreResponse.value.papers);
-        sources.push('CORE');
-        console.log('CORE papers received:', coreResponse.value.papers.length);
-      }
-
-      // Process PMC results
-      if (pmcResponse.status === 'fulfilled' && pmcResponse.value.status === 'success') {
-        allPapersList.push(...pmcResponse.value.papers);
-        sources.push('PMC');
-        console.log('PMC papers received:', pmcResponse.value.papers.length);
-      }
-
-      // Process Semantic Scholar results
-      if (semanticResponse.status === 'fulfilled' && semanticResponse.value.status === 'success') {
-        allPapersList.push(...semanticResponse.value.papers);
-        sources.push('Semantic Scholar');
-        console.log('Semantic Scholar papers received:', semanticResponse.value.papers.length);
-      }
-
-      // Process Google Scholar results
-      if (googleScholarResponse.status === 'fulfilled' && googleScholarResponse.value.status === 'success') {
-        allPapersList.push(...googleScholarResponse.value.papers);
-        sources.push('Google Scholar');
-        console.log('Google Scholar papers received:', googleScholarResponse.value.papers.length);
-      }
-
-      if (allPapersList.length > 0) {
-        console.log('Total papers received:', allPapersList.length);
-        setAllPapers(allPapersList);
-        setPapers(allPapersList);
-        setStats({
-          total: allPapersList.length,
-          sources: sources
+      // Process each API result as it arrives
+      const processResult = (name, result) => {
+        completedCount++;
+        console.log(`[${completedCount}/6] ${name} completed:`, {
+          status: result?.status,
+          paperCount: result?.papers?.length || 0,
+          hasError: !!result?.error,
+          resultKeys: result ? Object.keys(result) : 'null'
         });
 
-        // Save to cache for future use
-        await saveToCache(topic, allPapersList);
+        if (result && result.status === 'success' && result.papers && result.papers.length > 0) {
+          // Add new papers to the raw list
+          progressivePapers = [...progressivePapers, ...result.papers];
+          sources.push(name);
+
+          // Deduplicate across all sources accumulated so far
+          const deduplicated = deduplicatePapers(progressivePapers);
+          console.log(`✅ ${name}: ${result.papers.length} papers (raw total: ${progressivePapers.length}, unique: ${deduplicated.length})`);
+
+          // Update UI immediately with deduplicated results
+          setAllPapers([...deduplicated]);
+          setPapers([...deduplicated]);
+          setStats({
+            total: deduplicated.length,
+            sources: [...sources]
+          });
+
+          // Stop showing full-screen loader after first results arrive
+          if (completedCount <= apiCalls.length) {
+            setLoading(false);
+          }
+        } else {
+          console.warn(`⚠️ ${name}: No papers returned (status: ${result?.status}, message: ${result?.message || 'N/A'})`);
+        }
+      };
+
+      // Await all API calls using allSettled, but process each as it completes
+      const settledResults = await Promise.allSettled(
+        apiCalls.map(({ name, promise }) =>
+          promise.then(result => {
+            processResult(name, result);
+            return { name, result };
+          }).catch(err => {
+            completedCount++;
+            console.error(`❌ ${name} FAILED:`, err.message || err);
+            return { name, result: null, error: err };
+          })
+        )
+      );
+
+      // Final state update after all APIs complete — do one last dedup pass
+      if (progressivePapers.length > 0) {
+        const finalDeduplicated = deduplicatePapers(progressivePapers);
+        console.log(`All APIs complete. Raw: ${progressivePapers.length}, Unique: ${finalDeduplicated.length} (removed ${progressivePapers.length - finalDeduplicated.length} duplicates)`);
+        setAllPapers([...finalDeduplicated]);
+        setPapers([...finalDeduplicated]);
+        setStats({
+          total: finalDeduplicated.length,
+          sources: [...sources]
+        });
+
+        // Save deduplicated papers to cache (don't await — let it run in background)
+        saveToCache(topic, finalDeduplicated).catch(err =>
+          console.log('Background cache save failed:', err.message)
+        );
       } else {
         setError('No papers found. Please try a different search term.');
         setAllPapers([]);
@@ -1570,10 +1769,14 @@ export default function Results() {
       if (filter.field === 'title_abstract') {
         const searchTerm = filter.value.toLowerCase();
         if (filter.operator === 'includes') {
-          filtered = filtered.filter(p =>
-            (p.title && p.title.toLowerCase().includes(searchTerm)) ||
-            (p.abstract && p.abstract.toLowerCase().includes(searchTerm))
-          );
+          // Word-level matching: ALL words must appear in title OR abstract
+          // This prevents the exact-phrase problem where "graph neural network security"
+          // wouldn't match a paper about "security of graph neural networks"
+          const words = searchTerm.split(/\s+/).filter(w => w.length > 1);
+          filtered = filtered.filter(p => {
+            const text = ((p.title || '') + ' ' + (p.abstract || '')).toLowerCase();
+            return words.every(word => text.includes(word));
+          });
         } else if (filter.operator === 'equals') {
           filtered = filtered.filter(p =>
             (p.title && p.title.toLowerCase() === searchTerm) ||
@@ -1673,21 +1876,22 @@ export default function Results() {
 
     setSearchQuery(topic);
 
-    // Update the filter input to match the new topic
-    setFilters(prevFilters => {
-      const titleFilter = prevFilters.find(f => f.field === 'title_abstract');
-      if (titleFilter) {
-        // Update existing title_abstract filter
-        return prevFilters.map(f =>
-          f.field === 'title_abstract' ? { ...f, value: topic } : f
-        );
-      } else {
-        // Add new title_abstract filter
-        return [createFilter('title_abstract', 'includes', topic), ...prevFilters];
-      }
-    });
+    // Record search in history for autocomplete suggestions
+    recordSearch(topic);
 
-    fetchPapers();
+    // Don't auto-create title_abstract filter — the APIs already handle relevance.
+    // Users can manually add filters from the filter bar if needed.
+    setFilters([]);
+
+    // Guard against React StrictMode double-render causing duplicate fetches
+    let cancelled = false;
+    const doFetch = async () => {
+      if (!cancelled) {
+        await fetchPapers();
+      }
+    };
+    doFetch();
+    return () => { cancelled = true; };
   }, [topic]);
 
   // Apply filters whenever filters, stats filters, or allPapers change
@@ -1921,90 +2125,106 @@ export default function Results() {
     <div className="min-h-screen bg-white">
       {/* Query Builder / Filter Area */}
       <div className="border-b border-gray-200 bg-white">
-        <div className="max-w-7xl mx-auto px-4 py-3">
-          {/* Dropdown Row */}
-          <div className="flex items-center gap-2 mb-2">
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <div className="flex items-center gap-4 flex-wrap">
+            {/* Main Search Bar */}
+            <div className="flex-1 min-w-[300px]">
+              <SearchBar
+                onSearch={(newTopic) => navigate(`/results?topic=${encodeURIComponent(newTopic)}`)}
+                initialValue={topic || ''}
+                size="small"
+                placeholder="Search for another topic..."
+              />
+            </div>
+
+            {/* Save/Open Search Dropdown */}
             <SearchDropdown
               topic={topic}
               searchQuery={searchQuery}
             />
+
+            {/* Filter Toggle / Quick Actions */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={addFilter}
+                className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-md hover:bg-gray-50 text-sm font-medium transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Add Filter
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {filters.map((filter, index) => (
-              <React.Fragment key={filter.id}>
-                {index > 0 && (
-                  <button className="text-sm px-3 py-1.5 border border-gray-300 rounded hover:bg-gray-50">
-                    and
-                  </button>
-                )}
-                <select
-                  value={filter.field}
-                  onChange={(e) => updateFilter(filter.id, e.target.value, filter.operator, filter.value)}
-                  className="text-sm border border-gray-300 rounded px-3 py-1.5"
-                >
-                  <option value="title_abstract">Q Title & Abstract</option>
-                  <option value="open_access">Work</option>
-                  <option value="year">Year</option>
-                  <option value="venue">Venue</option>
-                </select>
-                <select
-                  value={filter.operator}
-                  onChange={(e) => updateFilter(filter.id, filter.field, e.target.value, filter.value)}
-                  className="text-sm border border-gray-300 rounded px-3 py-1.5"
-                >
-                  {filter.field === 'open_access' ? (
-                    <option value="is">is</option>
-                  ) : filter.field === 'year' ? (
-                    <>
+
+          {/* Active Filters Row */}
+          {filters.length > 0 && (
+            <div className="mt-4 flex items-center gap-2 flex-wrap border-t border-gray-100 pt-4">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider mr-2">Advanced Filters:</span>
+              {filters.map((filter, index) => (
+                <div key={filter.id} className="flex items-center bg-gray-50 border border-gray-200 rounded-lg p-1.5 shadow-sm">
+                  <select
+                    value={filter.field}
+                    onChange={(e) => updateFilter(filter.id, e.target.value, filter.operator, filter.value)}
+                    className="text-xs bg-transparent border-none focus:ring-0 font-medium text-gray-700"
+                  >
+                    <option value="title_abstract">Title & Abstract</option>
+                    <option value="open_access">Access</option>
+                    <option value="year">Year</option>
+                    <option value="venue">Venue</option>
+                  </select>
+
+                  <div className="h-4 w-px bg-gray-300 mx-2" />
+
+                  <select
+                    value={filter.operator}
+                    onChange={(e) => updateFilter(filter.id, filter.field, e.target.value, filter.value)}
+                    className="text-xs bg-transparent border-none focus:ring-0 text-gray-600"
+                  >
+                    {filter.field === 'open_access' ? (
                       <option value="is">is</option>
-                      <option value=">">greater than</option>
-                      <option value="<">less than</option>
-                    </>
-                  ) : (
-                    <>
-                      <option value="includes">includes</option>
-                      <option value="equals">equals</option>
-                    </>
-                  )}
-                </select>
-                {filter.field === 'open_access' ? (
-                  <input
-                    type="text"
-                    value={filter.value}
-                    onChange={(e) => updateFilter(filter.id, filter.field, filter.operator, e.target.value)}
-                    className="text-sm border border-gray-300 rounded px-3 py-1.5"
-                    placeholder="open access"
-                  />
-                ) : (
-                  <input
-                    type={filter.field === 'year' ? 'number' : 'text'}
-                    value={filter.value}
-                    onChange={(e) => updateFilter(filter.id, filter.field, filter.operator, e.target.value)}
-                    className="text-sm border border-gray-300 rounded px-3 py-1.5 flex-1 min-w-[200px]"
-                    placeholder={filter.field === 'title_abstract' ? 'Enter search term...' : ''}
-                  />
-                )}
-                {index === filters.length - 1 && (
-                  <>
-                    <button
-                      onClick={addFilter}
-                      className="p-2 bg-black text-white rounded-full hover:bg-gray-800"
-                    >
-                      <Plus className="w-4 h-4" />
-                    </button>
-                    {filters.length > 1 && (
-                      <button
-                        onClick={() => removeFilter(filter.id)}
-                        className="p-2 border border-gray-300 rounded hover:bg-gray-50"
-                      >
-                        <Trash2 className="w-4 h-4 text-gray-600" />
-                      </button>
+                    ) : filter.field === 'year' ? (
+                      <>
+                        <option value="is">is</option>
+                        <option value=">">greater than</option>
+                        <option value="<">less than</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="includes">includes</option>
+                        <option value="equals">equals</option>
+                      </>
                     )}
-                  </>
-                )}
-              </React.Fragment>
-            ))}
-          </div>
+                  </select>
+
+                  <div className="h-4 w-px bg-gray-300 mx-2" />
+
+                  {filter.field === 'open_access' ? (
+                    <input
+                      type="text"
+                      value={filter.value}
+                      onChange={(e) => updateFilter(filter.id, filter.field, filter.operator, e.target.value)}
+                      className="text-xs bg-transparent border-none focus:ring-0 w-24 placeholder-gray-400"
+                      placeholder="e.g. true"
+                    />
+                  ) : (
+                    <input
+                      type={filter.field === 'year' ? 'number' : 'text'}
+                      value={filter.value}
+                      onChange={(e) => updateFilter(filter.id, filter.field, filter.operator, e.target.value)}
+                      className="text-xs bg-transparent border-none focus:ring-0 min-w-[120px] placeholder-gray-400"
+                      placeholder="Value..."
+                    />
+                  )}
+
+                  <button
+                    onClick={() => removeFilter(filter.id)}
+                    className="ml-1 p-1 hover:bg-gray-200 rounded-md transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5 text-gray-500" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -2015,7 +2235,23 @@ export default function Results() {
           <div className="max-w-4xl mx-auto">
             {/* Works Header */}
             <div className="border-b border-gray-200 p-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-black">Works</h2>
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg font-semibold text-black">Works</h2>
+                {fromCache && (
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-xs font-medium rounded-full border border-yellow-200">
+                      Cached
+                    </span>
+                    <button
+                      onClick={() => fetchPapers(true)}
+                      className="px-2.5 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors font-medium"
+                      title="Bypass cache and fetch fresh results from all APIs"
+                    >
+                      ↻ Refresh
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 {papers.length > 0 && (
                   <button

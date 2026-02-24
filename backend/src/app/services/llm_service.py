@@ -12,13 +12,13 @@ OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
-def summarize_with_llm(text: str, model: str = "gpt-4o") -> Optional[Dict[str, str]]:
+def summarize_with_llm(text: str, model: str = "gpt-4") -> Optional[Dict[str, str]]:
     """
     Summarize a research paper using OpenAI API.
     
     Args:
         text: Full text of the paper to summarize
-        model: Model to use (default: gpt-3.5-turbo for cost efficiency)
+        model: Model to use (default: gpt-4o-mini for speed and cost efficiency)
     
     Returns:
         Dictionary with structured summary sections, or None if error
@@ -48,7 +48,16 @@ def summarize_with_llm(text: str, model: str = "gpt-4o") -> Optional[Dict[str, s
         return None
     
     try:
-        # Truncate text if too long (GPT-4o-mini has larger context limit)
+        # Strip references/bibliography section — it adds tokens but no value for summarization
+        import re
+        ref_pattern = r'\n\s*(?:References|REFERENCES|Bibliography|BIBLIOGRAPHY|Works Cited|WORKS CITED)\s*\n'
+        ref_match = re.search(ref_pattern, text)
+        if ref_match:
+            original_len = len(text)
+            text = text[:ref_match.start()]
+            logging.info(f"Stripped references section: {original_len} -> {len(text)} chars (saved {original_len - len(text)} chars)")
+        
+        # Truncate text if still too long (GPT-4o-mini has 128K context window)
         # Keep first ~100000 characters to leave room for prompt and response
         max_chars = 100000
         if len(text) > max_chars:
