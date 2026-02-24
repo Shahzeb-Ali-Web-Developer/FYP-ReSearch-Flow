@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { searchAPI, savedArticlesAPI, arxivAPI, coreAPI, pmcAPI, semanticScholarAPI, googleScholarAPI, APIError } from '../services/api';
 import {
@@ -419,6 +419,10 @@ const DetailPanel = ({ paper, onClose }) => {
   const [structuredContent, setStructuredContent] = useState(null);
   const [extractingText, setExtractingText] = useState(false);
 
+  // Refs for auto-scrolling to summary and chat sections
+  const summaryRef = useRef(null);
+  const chatRef = useRef(null);
+
   const abstract = paper.abstract && paper.abstract !== 'N/A' ? paper.abstract : null;
   const abstractPreview = abstract && abstract.length > 300 ? abstract.substring(0, 300) + '...' : abstract;
 
@@ -653,6 +657,11 @@ const DetailPanel = ({ paper, onClose }) => {
         }
 
         showToast('PDF extracted and summary generated successfully using AI (GPT-4)', 'success');
+
+        // Scroll to summary section after React renders it
+        setTimeout(() => {
+          summaryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 150);
       } else {
         showToast('Failed to generate summary', 'error');
       }
@@ -691,11 +700,6 @@ const DetailPanel = ({ paper, onClose }) => {
     e.preventDefault();
     if (!chatInput.trim() || chatLoading) return;
 
-    if (!pdfContent) {
-      showToast('Please generate summary first to extract paper content', 'info');
-      return;
-    }
-
     const userQuestion = chatInput.trim();
     setChatInput('');
 
@@ -711,22 +715,49 @@ const DetailPanel = ({ paper, onClose }) => {
         content: msg.content
       }));
 
+      // If we don't have pdfContent yet (no prior summarization), extract it first
+      let currentPdfContent = pdfContent;
+      if (!currentPdfContent && pdfUrlForExtract) {
+        showToast('Extracting paper content for the first time...', 'info');
+        try {
+          const extractResponse = await semanticScholarAPI.extractPdfContent(pdfUrlForExtract);
+          if (extractResponse.status === 'success' && extractResponse.full_text) {
+            currentPdfContent = extractResponse.full_text;
+            setPdfContent(currentPdfContent);
+          }
+        } catch (extractErr) {
+          console.warn('PDF extraction failed, will try with abstract fallback:', extractErr.message);
+          // If abstract is available, use it as fallback content
+          if (abstract) {
+            currentPdfContent = abstract;
+          }
+        }
+      } else if (!currentPdfContent && abstract) {
+        // No PDF, but have abstract — use it as the paper content
+        currentPdfContent = abstract;
+      }
+
+      if (!currentPdfContent && !pdfUrlForExtract) {
+        showToast('No paper content available to answer questions about', 'error');
+        setChatMessages(prev => prev.slice(0, -1));
+        setChatLoading(false);
+        return;
+      }
+
       let response;
-      // Use appropriate API based on source
+      // Pass pre-extracted pdfContent to skip backend re-extraction (optimization)
       if (isArxiv) {
-        response = await arxivAPI.askQuestion(arxivId || null, pdfUrlForExtract || null, userQuestion, history);
+        response = await arxivAPI.askQuestion(arxivId || null, pdfUrlForExtract || null, userQuestion, history, currentPdfContent);
       } else if (isCore) {
-        response = await coreAPI.askQuestion(pdfUrlForExtract, userQuestion, history);
+        response = await coreAPI.askQuestion(pdfUrlForExtract, userQuestion, history, currentPdfContent);
       } else if (isPmc) {
-        response = await pmcAPI.askQuestion(pdfUrlForExtract, userQuestion, history);
+        response = await pmcAPI.askQuestion(pdfUrlForExtract, userQuestion, history, currentPdfContent);
       } else if (isOpenAlex || isSemanticScholar) {
-        // Both OpenAlex and Semantic Scholar use the same generic PDF Q&A endpoint
-        response = await semanticScholarAPI.askQuestion(pdfUrlForExtract, userQuestion, history);
+        response = await semanticScholarAPI.askQuestion(pdfUrlForExtract, userQuestion, history, currentPdfContent);
       } else if (isGoogleScholar) {
-        response = await googleScholarAPI.askQuestion(pdfUrlForExtract, userQuestion, history);
+        response = await googleScholarAPI.askQuestion(pdfUrlForExtract, userQuestion, history, currentPdfContent);
       } else {
-        // Fallback: use generic PDF Q&A endpoint
-        response = await semanticScholarAPI.askQuestion(pdfUrlForExtract, userQuestion, history);
+        response = await semanticScholarAPI.askQuestion(pdfUrlForExtract, userQuestion, history, currentPdfContent);
       }
 
       if (response.status === 'success' && response.answer) {
@@ -935,10 +966,17 @@ const DetailPanel = ({ paper, onClose }) => {
                 )}
               </button>
             )}
-            {pdfContent && summary && (
+            {/* Ask about this paper — show if PDF or abstract is available */}
+            {(pdfUrlForExtract || abstract) && (
               <button
                 onClick={() => {
                   setShowChat(!showChat);
+                  // Scroll to chat section after it opens
+                  if (!showChat) {
+                    setTimeout(() => {
+                      chatRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 100);
+                  }
                 }}
                 className={`px-4 py-2 rounded text-sm flex items-center gap-2 transition-colors ${showChat
                   ? 'bg-gray-100 hover:bg-gray-200 text-black border border-gray-300'
@@ -1087,8 +1125,8 @@ const DetailPanel = ({ paper, onClose }) => {
       </div>
 
       {/* Chat Interface */}
-      {showChat && pdfContent && (
-        <div className="p-4 border-t-2 border-purple-300 bg-purple-50">
+      {showChat && (
+        <div ref={chatRef} className="p-4 border-t-2 border-purple-300 bg-purple-50">
           <div className="flex items-center gap-2 mb-3">
             <Bot className="w-5 h-5 text-purple-600" />
             <h3 className="text-base font-semibold text-black">Ask about this paper</h3>
@@ -1167,7 +1205,7 @@ const DetailPanel = ({ paper, onClose }) => {
 
       {/* AI Summary Display */}
       {summary && (
-        <div className="p-4 border-t-2 border-blue-300 bg-blue-50">
+        <div ref={summaryRef} className="p-4 border-t-2 border-blue-300 bg-blue-50">
           <div className="flex items-center gap-2 mb-3">
             <MessageSquare className="w-5 h-5 text-blue-600" />
             <h3 className="text-base font-semibold text-black">AI Summary (Generated by ChatGPT)</h3>

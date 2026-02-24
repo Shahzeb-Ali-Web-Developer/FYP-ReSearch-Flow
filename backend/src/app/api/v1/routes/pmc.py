@@ -201,65 +201,51 @@ async def ask_question_endpoint(
 ):
     """
     Ask a question about a research paper from PMC.
-    
-    Request body:
-        {
-            "pdf_url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC123456/pdf/",
-            "question": "What is the main contribution of this paper?",
-            "conversation_history": [  # Optional
-                {"role": "user", "content": "previous question"},
-                {"role": "assistant", "content": "previous answer"}
-            ]
-        }
-    
-    Returns:
-        Answer to the question
+    Accepts optional pdf_text to skip PDF re-extraction.
     """
     try:
         pdf_url = request_data.get("pdf_url")
         question = request_data.get("question")
+        pdf_text_direct = request_data.get("pdf_text")  # Optional: skip extraction
         conversation_history = request_data.get("conversation_history", [])
         
         if not question or not question.strip():
-            raise HTTPException(
-                status_code=400,
-                detail="Question is required"
-            )
+            raise HTTPException(status_code=400, detail="Question is required")
         
-        if not pdf_url:
-            raise HTTPException(
-                status_code=400,
-                detail="'pdf_url' must be provided"
-            )
-        
-        logging.info(f"Question about paper from: {pdf_url}")
         logging.info(f"Question: {question[:100]}...")
         
-        # Extract text from PDF (full extraction - no page limit)
-        pdf_text, extraction_error = get_pdf_text_from_url(pdf_url, max_pages=None)
+        # --- OPTIMIZATION: Use pre-extracted text if provided ---
+        if pdf_text_direct and len(pdf_text_direct.strip()) > 100:
+            pdf_text = pdf_text_direct
+            logging.info(f"Using pre-extracted PDF text ({len(pdf_text)} chars) — skipping PDF download")
+        else:
+            if not pdf_url:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Either 'pdf_url' or 'pdf_text' must be provided"
+                )
+            logging.info(f"Extracting PDF from URL: {pdf_url}")
+            pdf_text, extraction_error = get_pdf_text_from_url(pdf_url, max_pages=None)
+            
+            if pdf_text is None:
+                error_message = extraction_error or "PDF is not available or could not be processed."
+                raise HTTPException(
+                    status_code=404,
+                    detail={"error": "PDF not available", "message": error_message}
+                )
         
-        if pdf_text is None:
-            error_message = extraction_error or "PDF is not available or could not be processed."
-            raise HTTPException(
-                status_code=404,
-                detail={
-                    "error": "PDF not available",
-                    "message": error_message
-                }
-            )
-        
-        # Get answer from LLM
-        answer = ask_about_paper(question.strip(), pdf_text, conversation_history=conversation_history if conversation_history else None)
+        answer = ask_about_paper(
+            question.strip(),
+            pdf_text,
+            conversation_history=conversation_history if conversation_history else None
+        )
         
         if not answer:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to generate answer. Please try again."
-            )
+            raise HTTPException(status_code=500, detail="Failed to generate answer. Please try again.")
         
         return {
             "status": "success",
-            "pdf_url": pdf_url,
+            "pdf_url": pdf_url or "(text provided directly)",
             "question": question,
             "answer": answer
         }
@@ -270,10 +256,7 @@ async def ask_question_endpoint(
         logging.error(f"Error answering question: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail={
-                "error": "Failed to answer question",
-                "message": str(e)
-            }
+            detail={"error": "Failed to answer question", "message": str(e)}
         )
 
 

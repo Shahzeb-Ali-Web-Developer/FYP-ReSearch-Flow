@@ -83,30 +83,39 @@ def summarize_paper(text: str, max_sentences: int = 5, use_llm: bool = True) -> 
 
 def _extract_sections(text: str) -> Dict[str, str]:
     """
-    Extract common sections from research paper text.
+    Extract common sections from research paper text using flexible regex.
     """
     sections = {}
-    text_lower = text.lower()
     
-    # Common section headers
+    # Common section headers with flexible patterns (handling newlines, dots, or spaces)
+    # We use a non-greedy catch until the next major section header
+    major_sections = r"introduction|background|methodology|methods|related work|results|experiments|evaluation|discussion|conclusion|references|bibliography"
+    
     section_patterns = {
-        "abstract": r"(?:abstract|summary)\s*\n(.+?)(?=\n\s*(?:introduction|keywords|1\.|2\.|background))",
-        "introduction": r"(?:introduction|background|motivation)\s*\n(.+?)(?=\n\s*(?:2\.|methodology|method|related work|background))",
-        "methodology": r"(?:methodology|method|approach|methods?)\s*\n(.+?)(?=\n\s*(?:3\.|4\.|results?|experiments?|evaluation))",
-        "method": r"(?:method|approach)\s*\n(.+?)(?=\n\s*(?:results?|experiments?|evaluation))",
-        "results": r"(?:results?|experiments?|evaluation|findings?)\s*\n(.+?)(?=\n\s*(?:discussion|conclusion|5\.|6\.))",
-        "findings": r"(?:findings?|results?)\s*\n(.+?)(?=\n\s*(?:discussion|conclusion))",
-        "discussion": r"(?:discussion|analysis)\s*\n(.+?)(?=\n\s*(?:conclusion|references|acknowledgments?))",
-        "conclusion": r"(?:conclusion|conclusions?|summary)\s*\n(.+?)(?=\n\s*(?:references|acknowledgments?|bibliography))"
+        "abstract": rf"(?:abstract|summary)[\.\s:]+\n?(.*?)(?=\n\s*(?:{major_sections}|keywords|1\.|2\.))",
+        "introduction": rf"(?:introduction|background|motivation)[\.\s:]+\n?(.*?)(?=\n\s*(?:2\.|methodology|method|related work|background))",
+        "methodology": rf"(?:methodology|methods?|approach)[\.\s:]+\n?(.*?)(?=\n\s*(?:3\.|4\.|results?|experiments?|evaluation))",
+        "results": rf"(?:results?|experiments?|evaluation|findings?)[\.\s:]+\n?(.*?)(?=\n\s*(?:discussion|conclusion|5\.|6\.))",
+        "conclusion": rf"(?:conclusion|conclusions?|summary|closing)[\.\s:]+\n?(.*?)(?=\n\s*(?:references|acknowledgments?|bibliography|$))"
     }
     
     for section_name, pattern in section_patterns.items():
-        matches = re.finditer(pattern, text_lower, re.IGNORECASE | re.DOTALL)
-        content = ""
-        for match in matches:
-            content += match.group(1) + " "
-        if content:
-            sections[section_name] = content.strip()
+        match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+        if match:
+            # Clean section text: normalize whitespace
+            content = match.group(1).strip()
+            content = re.sub(r'\s+', ' ', content)
+            if len(content) > 50:
+                sections[section_name] = content
+    
+    # Fallback: if we didn't find the Abstract but there's text before the Introduction
+    if "abstract" not in sections:
+        intro_match = re.search(r'introduction', text, re.IGNORECASE)
+        if intro_match:
+            potential_abs = text[:intro_match.start()].strip()
+            # If it has "Abstract" but our regex missed it, or just find any text before intro
+            if "abstract" in potential_abs.lower():
+                sections["abstract"] = potential_abs
     
     return sections
 

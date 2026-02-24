@@ -436,57 +436,40 @@ export const arxivAPI = {
 
   /**
    * Ask a question about a paper
-   * @param {string} arxivId - arXiv ID (e.g., "1234.5678") OR pdfUrl
-   * @param {string} pdfUrl - Optional PDF URL (alternative to arxivId)
-   * @param {string} question - Question to ask about the paper
+   * @param {string} arxivId - arXiv ID OR null
+   * @param {string} pdfUrl - PDF URL OR null
+   * @param {string} question - Question to ask
    * @param {Array} conversationHistory - Optional conversation history
-   * @returns {Promise<Object>} Answer to the question
+   * @param {string} pdfText - Optional pre-extracted text (skips backend PDF extraction)
    */
-  async askQuestion(arxivId = null, pdfUrl = null, question = "", conversationHistory = []) {
+  async askQuestion(arxivId = null, pdfUrl = null, question = "", conversationHistory = [], pdfText = null) {
     try {
       const requestBody = {};
-      if (arxivId) {
-        requestBody.arxiv_id = arxivId;
-      } else if (pdfUrl) {
-        requestBody.pdf_url = pdfUrl;
-      } else {
-        throw new APIError('Either arxivId or pdfUrl must be provided', 400);
-      }
+      if (arxivId) requestBody.arxiv_id = arxivId;
+      else if (pdfUrl) requestBody.pdf_url = pdfUrl;
+      else if (!pdfText) throw new APIError('Either arxivId, pdfUrl, or pdfText must be provided', 400);
 
       requestBody.question = question;
+      // Pass pre-extracted text to skip backend PDF download
+      if (pdfText && pdfText.length > 100) requestBody.pdf_text = pdfText;
       if (conversationHistory && conversationHistory.length > 0) {
         requestBody.conversation_history = conversationHistory;
       }
 
       const response = await fetch(`${API_BASE_URL}/arxiv/ask`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
-
       if (!response.ok) {
-        throw new APIError(
-          data.detail?.message || 'Failed to get answer',
-          response.status,
-          data.detail
-        );
+        throw new APIError(data.detail?.message || 'Failed to get answer', response.status, data.detail);
       }
-
       return data;
     } catch (error) {
-      if (error instanceof APIError) {
-        throw error;
-      }
-
-      throw new APIError(
-        'Network error: Could not connect to server',
-        0,
-        { originalError: error.message }
-      );
+      if (error instanceof APIError) throw error;
+      throw new APIError('Network error: Could not connect to server', 0, { originalError: error.message });
     }
   }
 };
@@ -625,54 +608,35 @@ export const coreAPI = {
   /**
    * Ask a question about a CORE paper
    * @param {string} pdfUrl - PDF URL
-   * @param {string} question - Question to ask about the paper
-   * @param {Array} conversationHistory - Optional conversation history
-   * @returns {Promise<Object>} Answer to the question
+   * @param {string} question - Question to ask
+   * @param {Array} conversationHistory - Optional
+   * @param {string} pdfText - Optional pre-extracted text (skips backend PDF extraction)
    */
-  async askQuestion(pdfUrl, question = "", conversationHistory = []) {
+  async askQuestion(pdfUrl, question = "", conversationHistory = [], pdfText = null) {
     try {
-      if (!pdfUrl) {
-        throw new APIError('pdfUrl must be provided', 400);
-      }
+      if (!pdfUrl && !pdfText) throw new APIError('pdfUrl or pdfText must be provided', 400);
 
-      const requestBody = {
-        pdf_url: pdfUrl,
-        question: question
-      };
-
+      const requestBody = { question };
+      if (pdfUrl) requestBody.pdf_url = pdfUrl;
+      if (pdfText && pdfText.length > 100) requestBody.pdf_text = pdfText;
       if (conversationHistory && conversationHistory.length > 0) {
         requestBody.conversation_history = conversationHistory;
       }
 
       const response = await fetch(`${API_BASE_URL}/core/ask`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
-
       if (!response.ok) {
-        throw new APIError(
-          data.detail?.message || 'Failed to get answer',
-          response.status,
-          data.detail
-        );
+        throw new APIError(data.detail?.message || 'Failed to get answer', response.status, data.detail);
       }
-
       return data;
     } catch (error) {
-      if (error instanceof APIError) {
-        throw error;
-      }
-
-      throw new APIError(
-        'Network error: Could not connect to server',
-        0,
-        { originalError: error.message }
-      );
+      if (error instanceof APIError) throw error;
+      throw new APIError('Network error: Could not connect to server', 0, { originalError: error.message });
     }
   }
 };
@@ -811,54 +775,35 @@ export const pmcAPI = {
   /**
    * Ask a question about a PMC paper
    * @param {string} pdfUrl - PDF URL
-   * @param {string} question - Question to ask about the paper
-   * @param {Array} conversationHistory - Optional conversation history
-   * @returns {Promise<Object>} Answer to the question
+   * @param {string} question - Question to ask
+   * @param {Array} conversationHistory - Optional
+   * @param {string} pdfText - Optional pre-extracted text (skips backend PDF extraction)
    */
-  async askQuestion(pdfUrl, question = "", conversationHistory = []) {
+  async askQuestion(pdfUrl, question = "", conversationHistory = [], pdfText = null) {
     try {
-      if (!pdfUrl) {
-        throw new APIError('pdfUrl must be provided', 400);
-      }
+      if (!pdfUrl && !pdfText) throw new APIError('pdfUrl or pdfText must be provided', 400);
 
-      const requestBody = {
-        pdf_url: pdfUrl,
-        question: question
-      };
-
+      const requestBody = { question };
+      if (pdfUrl) requestBody.pdf_url = pdfUrl;
+      if (pdfText && pdfText.length > 100) requestBody.pdf_text = pdfText;
       if (conversationHistory && conversationHistory.length > 0) {
         requestBody.conversation_history = conversationHistory;
       }
 
       const response = await fetch(`${API_BASE_URL}/pmc/ask`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
-
       if (!response.ok) {
-        throw new APIError(
-          data.detail?.message || 'Failed to get answer',
-          response.status,
-          data.detail
-        );
+        throw new APIError(data.detail?.message || 'Failed to get answer', response.status, data.detail);
       }
-
       return data;
     } catch (error) {
-      if (error instanceof APIError) {
-        throw error;
-      }
-
-      throw new APIError(
-        'Network error: Could not connect to server',
-        0,
-        { originalError: error.message }
-      );
+      if (error instanceof APIError) throw error;
+      throw new APIError('Network error: Could not connect to server', 0, { originalError: error.message });
     }
   }
 };
@@ -1040,55 +985,35 @@ export const semanticScholarAPI = {
   /**
    * Ask a question about a paper from any source
    * @param {string} pdfUrl - PDF URL
-   * @param {string} question - Question to ask about the paper
-   * @param {Array} conversationHistory - Optional conversation history
-   * @returns {Promise<Object>} Answer to the question
+   * @param {string} question - Question to ask
+   * @param {Array} conversationHistory - Optional
+   * @param {string} pdfText - Optional pre-extracted text (skips backend PDF extraction)
    */
-  async askQuestion(pdfUrl, question = "", conversationHistory = []) {
-
+  async askQuestion(pdfUrl, question = "", conversationHistory = [], pdfText = null) {
     try {
-      if (!pdfUrl) {
-        throw new APIError('pdfUrl must be provided', 400);
-      }
+      if (!pdfUrl && !pdfText) throw new APIError('pdfUrl or pdfText must be provided', 400);
 
-      const requestBody = {
-        pdf_url: pdfUrl,
-        question: question
-      };
-
+      const requestBody = { question };
+      if (pdfUrl) requestBody.pdf_url = pdfUrl;
+      if (pdfText && pdfText.length > 100) requestBody.pdf_text = pdfText;
       if (conversationHistory && conversationHistory.length > 0) {
         requestBody.conversation_history = conversationHistory;
       }
 
       const response = await fetch(`${API_BASE_URL}/semantic-scholar/ask`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
-
       if (!response.ok) {
-        throw new APIError(
-          data.detail?.message || 'Failed to get answer',
-          response.status,
-          data.detail
-        );
+        throw new APIError(data.detail?.message || 'Failed to get answer', response.status, data.detail);
       }
-
       return data;
     } catch (error) {
-      if (error instanceof APIError) {
-        throw error;
-      }
-
-      throw new APIError(
-        'Network error: Could not connect to server',
-        0,
-        { originalError: error.message }
-      );
+      if (error instanceof APIError) throw error;
+      throw new APIError('Network error: Could not connect to server', 0, { originalError: error.message });
     }
   }
 };
@@ -1227,54 +1152,35 @@ export const googleScholarAPI = {
   /**
    * Ask a question about a paper from any source
    * @param {string} pdfUrl - PDF URL
-   * @param {string} question - Question to ask about the paper
-   * @param {Array} conversationHistory - Optional conversation history
-   * @returns {Promise<Object>} Answer to the question
+   * @param {string} question - Question to ask
+   * @param {Array} conversationHistory - Optional
+   * @param {string} pdfText - Optional pre-extracted text (skips backend PDF extraction)
    */
-  async askQuestion(pdfUrl, question = "", conversationHistory = []) {
+  async askQuestion(pdfUrl, question = "", conversationHistory = [], pdfText = null) {
     try {
-      if (!pdfUrl) {
-        throw new APIError('pdfUrl must be provided', 400);
-      }
+      if (!pdfUrl && !pdfText) throw new APIError('pdfUrl or pdfText must be provided', 400);
 
-      const requestBody = {
-        pdf_url: pdfUrl,
-        question: question
-      };
-
+      const requestBody = { question };
+      if (pdfUrl) requestBody.pdf_url = pdfUrl;
+      if (pdfText && pdfText.length > 100) requestBody.pdf_text = pdfText;
       if (conversationHistory && conversationHistory.length > 0) {
         requestBody.conversation_history = conversationHistory;
       }
 
       const response = await fetch(`${API_BASE_URL}/google-scholar/ask`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
-
       if (!response.ok) {
-        throw new APIError(
-          data.detail?.message || 'Failed to get answer',
-          response.status,
-          data.detail
-        );
+        throw new APIError(data.detail?.message || 'Failed to get answer', response.status, data.detail);
       }
-
       return data;
     } catch (error) {
-      if (error instanceof APIError) {
-        throw error;
-      }
-
-      throw new APIError(
-        'Network error: Could not connect to server',
-        0,
-        { originalError: error.message }
-      );
+      if (error instanceof APIError) throw error;
+      throw new APIError('Network error: Could not connect to server', 0, { originalError: error.message });
     }
   }
 };
