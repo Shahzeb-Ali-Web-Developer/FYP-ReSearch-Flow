@@ -6,11 +6,7 @@ Write-Host "  ReSearch Flow - Server Startup" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-
-$pythonPath = "C:\Users\DELL\AppData\Local\Programs\Python\Python313\python.exe"
-
-# $pythonPath = "C:\Python313\python.exe"
-
+$pythonPath = "C:\Python314\python.exe"
 
 # Check Python
 if (-not (Test-Path $pythonPath)) {
@@ -100,5 +96,7 @@ Write-Host "  Backend:  http://localhost:8000" -ForegroundColor White
 Write-Host "  API Docs: http://localhost:8000/docs" -ForegroundColor White
 Write-Host ""
 Write-Host "Press any key to exit this window (servers will keep running)..." -ForegroundColor Yellow
+$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 

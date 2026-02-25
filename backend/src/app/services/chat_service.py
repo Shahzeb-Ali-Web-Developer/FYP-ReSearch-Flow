@@ -12,7 +12,7 @@ OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
-def ask_about_paper(question: str, paper_text: str, conversation_history: Optional[List[Dict[str, str]]] = None, model: str = "gpt-4") -> Optional[str]:
+def ask_about_paper(question: str, paper_text: str, conversation_history: Optional[List[Dict[str, str]]] = None, model: str = "gpt-4o") -> Optional[str]:
     """
     Answer a question about a research paper using LLM with conversation context.
     

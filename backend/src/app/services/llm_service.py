@@ -12,7 +12,7 @@ OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
-def summarize_with_llm(text: str, model: str = "gpt-4") -> Optional[Dict[str, str]]:
+def summarize_with_llm(text: str, model: str = "gpt-4o") -> Optional[Dict[str, str]]:
     """
     Summarize a research paper using OpenAI API.
     
