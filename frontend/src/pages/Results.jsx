@@ -4,7 +4,7 @@ import { searchAPI, savedArticlesAPI, arxivAPI, coreAPI, pmcAPI, semanticScholar
 import {
   BookOpen, X, FileText, MessageSquare, Code, Download,
   ChevronDown, Plus, Trash2, MoreVertical, ArrowUpDown, BarChart3, CheckSquare, Network,
-  Check, Bookmark, Share2, Copy, CheckCircle, Building2, Send, Bot, User
+  Check, Bookmark, Share2, Copy, CheckCircle, Building2, Send, Bot, User, Compass, TrendingUp
 } from 'lucide-react';
 import SearchDropdown from '../components/SearchDropdown';
 import CitationMesh from '../components/CitationMesh';
@@ -109,11 +109,15 @@ const StatsPanel = ({
   setSelectedInstitutions,
   openAccessOnly,
   onToggleOpenAccess,
+  searchQuery,
+  onRelatedSearch,
+  relatedSearches,
+  relatedLoading,
 }) => {
   const [expandedSections, setExpandedSections] = useState({
-    year: true,
+    relatedSearches: true,
     topic: false,
-    institution: true,  // Expanded by default
+    institution: true,
     type: true
   });
 
@@ -241,49 +245,43 @@ const StatsPanel = ({
           </button>
         </div>
 
-        {/* Year Distribution */}
+        {/* Related Searches */}
         <div className="border-b border-gray-200 pb-4 pt-2">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <BarChart3 className="w-4 h-4 text-gray-600" />
-              <span className="text-sm font-medium text-black">Year</span>
+              <Compass className="w-4 h-4 text-gray-600" />
+              <span className="text-sm font-medium text-black">Related Searches</span>
             </div>
-            <button onClick={() => toggleSection('year')}>
-              <ChevronDown className={`w-4 h-4 text-gray-600 transition-transform ${expandedSections.year ? '' : '-rotate-90'}`} />
+            <button onClick={() => toggleSection('relatedSearches')}>
+              <ChevronDown className={`w-4 h-4 text-gray-600 transition-transform ${expandedSections.relatedSearches ? '' : '-rotate-90'}`} />
             </button>
           </div>
-          {expandedSections.year && (
-            <div className="space-y-2">
-              {sortedYears.map(year => {
-                const count = yearDistribution[year];
-                const width = (count / maxYearCount) * 100;
-                const isSelected = selectedYears.includes(parseInt(year));
-                return (
-                  <label key={year} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-1 rounded -ml-1">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={(e) => {
-                        const yearNum = parseInt(year);
-                        if (e.target.checked) {
-                          setSelectedYears([...selectedYears, yearNum]);
-                        } else {
-                          setSelectedYears(selectedYears.filter(y => y !== yearNum));
-                        }
-                      }}
-                      className="rounded border-gray-300"
-                    />
-                    <div className="flex-1 bg-gray-200 rounded h-4 overflow-hidden">
-                      <div
-                        className={`h-full rounded ${isSelected ? 'bg-black' : 'bg-gray-400'}`}
-                        style={{ width: `${width}%` }}
-                      />
+          {expandedSections.relatedSearches && (
+            <div className="space-y-1">
+              {relatedLoading ? (
+                <div className="flex items-center gap-2 py-3 text-gray-400 text-xs">
+                  <div className="w-3.5 h-3.5 border-2 border-gray-300 border-t-transparent rounded-full animate-spin" />
+                  Loading related topics...
+                </div>
+              ) : relatedSearches.length > 0 ? (
+                relatedSearches.map((item, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => onRelatedSearch && onRelatedSearch(item.text)}
+                    className="w-full text-left px-2 py-2 rounded-md hover:bg-gray-50 flex items-start gap-2.5 group transition-colors"
+                  >
+                    <TrendingUp className="w-3.5 h-3.5 text-gray-400 group-hover:text-black mt-0.5 flex-shrink-0 transition-colors" />
+                    <div className="flex flex-col overflow-hidden">
+                      <span className="text-sm text-gray-700 group-hover:text-black truncate transition-colors">{item.text}</span>
+                      {item.hint && (
+                        <span className="text-[10px] text-gray-400 truncate">{item.hint}</span>
+                      )}
                     </div>
-                    <span className="text-xs text-gray-600 w-12 text-right">{year}</span>
-                  </label>
-                );
-              })}
-              <button className="text-xs text-gray-500 hover:text-black mt-2">More...</button>
+                  </button>
+                ))
+              ) : (
+                <p className="text-xs text-gray-400 py-2">No related topics found</p>
+              )}
             </div>
           )}
         </div>
@@ -1510,6 +1508,70 @@ export default function Results() {
   const [openAccessOnly, setOpenAccessOnly] = useState(false);
   const [fromCache, setFromCache] = useState(false);
 
+  // Related searches state (fetched here, passed to StatsPanel)
+  const [relatedSearches, setRelatedSearches] = useState([]);
+  const [relatedLoading, setRelatedLoading] = useState(false);
+
+  // Fetch related searches from OpenAlex when topic changes
+  useEffect(() => {
+    const fetchRelated = async () => {
+      if (!topic || topic.trim().length < 2) {
+        setRelatedSearches([]);
+        return;
+      }
+      setRelatedLoading(true);
+      try {
+        // Use a shortened query (first 3 words) for broader results
+        const words = topic.trim().split(/\s+/);
+        const shortQuery = words.slice(0, Math.min(3, words.length)).join(' ');
+
+        // Try autocomplete first with shortened query
+        const autocompleteRes = await fetch(
+          `https://api.openalex.org/autocomplete/topics?q=${encodeURIComponent(shortQuery)}`
+        );
+
+        let items = [];
+        if (autocompleteRes.ok) {
+          const data = await autocompleteRes.json();
+          items = (data.results || [])
+            .filter(t => t.display_name.toLowerCase() !== topic.trim().toLowerCase())
+            .slice(0, 8)
+            .map(t => ({
+              text: t.display_name,
+              hint: t.hint || '',
+            }));
+        }
+
+        // If autocomplete returned too few, supplement with topics search
+        if (items.length < 4) {
+          const searchRes = await fetch(
+            `https://api.openalex.org/topics?search=${encodeURIComponent(topic.trim())}&per-page=10&select=display_name,works_count`
+          );
+          if (searchRes.ok) {
+            const searchData = await searchRes.json();
+            const existing = new Set(items.map(i => i.text.toLowerCase()));
+            existing.add(topic.trim().toLowerCase());
+            const extra = (searchData.results || [])
+              .filter(t => !existing.has(t.display_name.toLowerCase()))
+              .slice(0, 8 - items.length)
+              .map(t => ({
+                text: t.display_name,
+                hint: t.works_count ? `${Number(t.works_count).toLocaleString()} papers` : '',
+              }));
+            items = [...items, ...extra];
+          }
+        }
+
+        setRelatedSearches(items);
+      } catch (err) {
+        console.warn('Related searches error:', err);
+      } finally {
+        setRelatedLoading(false);
+      }
+    };
+    fetchRelated();
+  }, [topic]);
+
   // Check if papers exist in Supabase for this topic (with 3-day freshness check)
   const CACHE_MAX_AGE_DAYS = 3;
 
@@ -2493,6 +2555,10 @@ export default function Results() {
             setSelectedInstitutions={setSelectedInstitutions}
             openAccessOnly={openAccessOnly}
             onToggleOpenAccess={() => setOpenAccessOnly(!openAccessOnly)}
+            searchQuery={topic}
+            onRelatedSearch={(query) => navigate(`/results?topic=${encodeURIComponent(query)}`)}
+            relatedSearches={relatedSearches}
+            relatedLoading={relatedLoading}
           />
         )}
 

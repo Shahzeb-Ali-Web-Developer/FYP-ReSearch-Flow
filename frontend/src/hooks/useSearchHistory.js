@@ -7,7 +7,7 @@
  *  - Fetching past searches for autocomplete suggestions
  *  - Deleting search history entries
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -55,6 +55,10 @@ export function useSearchHistory() {
     const { user, isAuthenticated } = useAuth();
     const [searchHistory, setSearchHistory] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [trendingTopics, setTrendingTopics] = useState([]);
+    const [trendingLoading, setTrendingLoading] = useState(false);
+    const trendingCacheRef = useRef({ data: null, timestamp: 0 });
+    const TRENDING_CACHE_MS = 10 * 60 * 1000; // 10-minute cache
 
     // Fetch user's search history from Supabase
     const fetchSearchHistory = useCallback(async () => {
@@ -169,6 +173,88 @@ export function useSearchHistory() {
             console.warn('Clear history error:', err);
         }
     }, [user, isAuthenticated]);
+
+    /**
+     * Fetch trending research topics from OpenAlex (external only).
+     * When a query is provided, results are filtered to match that query.
+     * When empty, shows global trending topics.
+     * Results are cached per query for 10 minutes.
+     */
+    const fetchTrendingTopics = useCallback(async (query = '') => {
+        const trimmed = (query || '').trim().toLowerCase();
+        const cacheKey = trimmed || '__global__';
+
+        // Return cache if still valid for this query
+        const now = Date.now();
+        const cached = trendingCacheRef.current;
+        if (cached.key === cacheKey && cached.data && (now - cached.timestamp) < TRENDING_CACHE_MS) {
+            setTrendingTopics(cached.data);
+            return cached.data;
+        }
+
+        setTrendingLoading(true);
+        try {
+            // Calculate date 30 days ago for "recent" filter
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            const dateStr = thirtyDaysAgo.toISOString().split('T')[0];
+
+            // Build URLs based on whether we have a query
+            const topicsUrl = trimmed.length >= 2
+                ? `https://api.openalex.org/autocomplete/topics?q=${encodeURIComponent(trimmed)}`
+                : 'https://api.openalex.org/topics?sort=works_count:desc&per-page=8&select=display_name,description,works_count';
+
+            const worksFilter = trimmed.length >= 2
+                ? `https://api.openalex.org/works?search=${encodeURIComponent(trimmed)}&filter=from_publication_date:${dateStr}&sort=cited_by_count:desc&per-page=8&select=display_name,cited_by_count`
+                : `https://api.openalex.org/works?filter=from_publication_date:${dateStr}&sort=cited_by_count:desc&per-page=8&select=display_name,cited_by_count,topics`;
+
+            // Fetch both endpoints in parallel
+            const [topicsRes, hotPapersRes] = await Promise.allSettled([
+                fetch(topicsUrl),
+                fetch(worksFilter)
+            ]);
+
+            const trending = [];
+
+            // Parse trending topics
+            if (topicsRes.status === 'fulfilled' && topicsRes.value.ok) {
+                const topicsData = await topicsRes.value.json();
+                const topicsList = topicsData.results || [];
+                const topics = topicsList.slice(0, 8).map(t => ({
+                    text: t.display_name,
+                    type: 'trending_topic',
+                    hint: t.works_count ? `${Number(t.works_count).toLocaleString()} papers` : (t.hint || ''),
+                    description: t.description || '',
+                }));
+                trending.push(...topics);
+            }
+
+            // Parse hot papers (most-cited recent papers)
+            if (hotPapersRes.status === 'fulfilled' && hotPapersRes.value.ok) {
+                const papersData = await hotPapersRes.value.json();
+                const seen = new Set(trending.map(t => t.text.toLowerCase()));
+                const hotPapers = (papersData.results || [])
+                    .filter(p => p.display_name && !seen.has(p.display_name.toLowerCase()))
+                    .slice(0, 6)
+                    .map(p => ({
+                        text: p.display_name,
+                        type: 'hot_paper',
+                        hint: `${(p.cited_by_count || 0).toLocaleString()} citations`,
+                    }));
+                trending.push(...hotPapers);
+            }
+
+            // Cache results keyed by query
+            trendingCacheRef.current = { key: cacheKey, data: trending, timestamp: now };
+            setTrendingTopics(trending);
+            return trending;
+        } catch (err) {
+            console.warn('Trending topics fetch error:', err);
+            return [];
+        } finally {
+            setTrendingLoading(false);
+        }
+    }, [TRENDING_CACHE_MS]);
 
     /**
      * Fetch external autocomplete suggestions from OpenAlex
@@ -300,5 +386,8 @@ export function useSearchHistory() {
         clearHistory,
         getSuggestions,
         fetchSearchHistory,
+        trendingTopics,
+        trendingLoading,
+        fetchTrendingTopics,
     };
 }
