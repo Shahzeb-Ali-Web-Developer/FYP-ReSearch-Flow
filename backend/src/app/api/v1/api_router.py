@@ -7,7 +7,8 @@ from src.app.api.v1.routes.core import router as core_router
 from src.app.api.v1.routes.pmc import router as pmc_router
 from src.app.api.v1.routes.semantic_scholar import router as semantic_scholar_router
 from src.app.api.v1.routes.google_scholar import router as google_scholar_router
-
+from src.app.api.v1.routes.trends import router as trends_router
+from src.app.api.v1.routes.draft import router as draft_router
 
 api_router = APIRouter()
 
@@ -19,3 +20,5 @@ api_router.include_router(core_router, prefix="/core", tags=["CORE Search & Summ
 api_router.include_router(pmc_router, prefix="/pmc", tags=["PMC Search & Summarization"])
 api_router.include_router(semantic_scholar_router, prefix="/semantic-scholar", tags=["Semantic Scholar Search & Summarization"])
 api_router.include_router(google_scholar_router, prefix="/google-scholar", tags=["Google Scholar Search & Summarization"])
+api_router.include_router(trends_router, prefix="/trends", tags=["Trending Topics"])
+api_router.include_router(draft_router, prefix="/draft", tags=["Draft Generation"])

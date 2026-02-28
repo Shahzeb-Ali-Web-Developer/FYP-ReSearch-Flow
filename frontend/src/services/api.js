@@ -1185,4 +1185,87 @@ export const googleScholarAPI = {
   }
 };
 
+// Trends API functions
+export const trendsAPI = {
+  /**
+   * Get trending academic research topics/concepts
+   * @returns {Promise<Object>} Response with topics array
+   */
+  getTrendingTopics: async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/trends/topics`);
+      if (!response.ok) {
+        throw new APIError('Failed to fetch trending topics', response.status);
+      }
+      return await response.json();
+    } catch (error) {
+      if (error instanceof APIError) throw error;
+      throw new APIError(error.message || 'Failed to fetch trending topics');
+    }
+  }
+};
+
+// Draft Generation API functions
+export const draftAPI = {
+  /**
+   * Generate a structured research draft from a paper's PDF
+   * @param {string} pdfUrl - Open-access PDF URL
+   * @param {Object} metadata - Optional paper metadata { title, authors, abstract }
+   * @returns {Promise<Object>} Response with draft sections and figure analyses
+   */
+  async generateDraft(pdfUrl, metadata = {}) {
+    try {
+      if (!pdfUrl) {
+        throw new APIError('pdfUrl must be provided', 400);
+      }
+
+      const requestBody = {
+        pdf_url: pdfUrl,
+        title: metadata.title || '',
+        authors: metadata.authors || '',
+        abstract: metadata.abstract || '',
+      };
+
+      const response = await fetch(`${API_BASE_URL}/draft/generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      let data;
+      try {
+        data = await response.json();
+      } catch (e) {
+        throw new APIError(
+          `Server returned ${response.status} but no valid JSON response.`,
+          response.status
+        );
+      }
+
+      if (!response.ok) {
+        const errorMsg = data.detail?.message || data.detail || 'Failed to generate draft';
+        throw new APIError(
+          typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg),
+          response.status,
+          data.detail
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+
+      throw new APIError(
+        `Network/Parsing error: ${error.message || 'Could not connect to server'}`,
+        0,
+        { originalError: error.message }
+      );
+    }
+  }
+};
+
 export { APIError };

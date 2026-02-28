@@ -6,12 +6,12 @@ Write-Host "  ReSearch Flow - Server Startup" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-$pythonPath = "C:\Python314\python.exe"
+$pythonPath = (Get-Command python -ErrorAction SilentlyContinue).Source
 
 # Check Python
-if (-not (Test-Path $pythonPath)) {
-    Write-Host "❌ Python not found at: $pythonPath" -ForegroundColor Red
-    Write-Host "Please update the pythonPath in this script" -ForegroundColor Yellow
+if (-not $pythonPath -or -not (Test-Path $pythonPath)) {
+    Write-Host "❌ Python not found in PATH or path is invalid: $pythonPath" -ForegroundColor Red
+    Write-Host "Please ensure python is installed and in your environment variables" -ForegroundColor Yellow
     exit 1
 }
 

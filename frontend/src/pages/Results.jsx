@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { searchAPI, savedArticlesAPI, arxivAPI, coreAPI, pmcAPI, semanticScholarAPI, googleScholarAPI, APIError } from '../services/api';
+import { searchAPI, savedArticlesAPI, arxivAPI, coreAPI, pmcAPI, semanticScholarAPI, googleScholarAPI, draftAPI, APIError } from '../services/api';
 import {
   BookOpen, X, FileText, MessageSquare, Code, Download,
-  ChevronDown, Plus, Trash2, MoreVertical, ArrowUpDown, BarChart3, CheckSquare, Network,
-  Check, Bookmark, Share2, Copy, CheckCircle, Building2, Send, Bot, User, Compass, TrendingUp
+  ChevronDown, ChevronUp, Plus, Trash2, MoreVertical, ArrowUpDown, BarChart3, CheckSquare, Network,
+  Check, Bookmark, Share2, Copy, CheckCircle, Building2, Send, Bot, User, Compass, TrendingUp,
+  PenLine, Image, ClipboardCopy, Eye, EyeOff
 } from 'lucide-react';
 import SearchDropdown from '../components/SearchDropdown';
 import CitationMesh from '../components/CitationMesh';
@@ -416,10 +417,17 @@ const DetailPanel = ({ paper, onClose }) => {
   const [chatLoading, setChatLoading] = useState(false);
   const [structuredContent, setStructuredContent] = useState(null);
   const [extractingText, setExtractingText] = useState(false);
+  const [draft, setDraft] = useState(null);
+  const [draftFigures, setDraftFigures] = useState([]);
+  const [draftGenerating, setDraftGenerating] = useState(false);
+  const [draftProgress, setDraftProgress] = useState('');
+  const [draftCollapsed, setDraftCollapsed] = useState({});
+  const [draftMinimized, setDraftMinimized] = useState(false);
 
   // Refs for auto-scrolling to summary and chat sections
   const summaryRef = useRef(null);
   const chatRef = useRef(null);
+  const draftRef = useRef(null);
 
   const abstract = paper.abstract && paper.abstract !== 'N/A' ? paper.abstract : null;
   const abstractPreview = abstract && abstract.length > 300 ? abstract.substring(0, 300) + '...' : abstract;
@@ -448,6 +456,12 @@ const DetailPanel = ({ paper, onClose }) => {
     setChatInput('');
     setStructuredContent(null);
     setExtractingText(false);
+    setDraft(null);
+    setDraftFigures([]);
+    setDraftGenerating(false);
+    setDraftProgress('');
+    setDraftCollapsed({});
+    setDraftMinimized(false);
   }, [paper]);
 
   // Check if article is saved when component mounts or paper changes
@@ -986,6 +1000,73 @@ const DetailPanel = ({ paper, onClose }) => {
                 <span>Ask about this paper</span>
               </button>
             )}
+            {/* Generate Draft button — only for papers with open-access PDF */}
+            {pdfUrlForExtract && (
+              <button
+                onClick={async () => {
+                  if (draft) {
+                    draftRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    return;
+                  }
+                  setDraftGenerating(true);
+                  setDraftProgress('Downloading & extracting PDF...');
+                  try {
+                    const authorsStr = Array.isArray(paper.authors)
+                      ? paper.authors.map(a => typeof a === 'string' ? a : a.name || '').join(', ')
+                      : '';
+                    setDraftProgress('Extracting figures & analyzing visuals...');
+                    const response = await draftAPI.generateDraft(pdfUrlForExtract, {
+                      title: paper.title || '',
+                      authors: authorsStr,
+                      abstract: abstract || '',
+                    });
+                    if (response.status === 'success' && response.draft) {
+                      setDraft(response.draft);
+                      setDraftFigures(response.figure_analyses || []);
+                      showToast(
+                        `Draft generated! ${response.metadata?.figures_analyzed || 0} figures analyzed in ${response.metadata?.processing_time_seconds || '?'}s`,
+                        'success'
+                      );
+                      setTimeout(() => {
+                        draftRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }, 150);
+                    } else {
+                      showToast('Failed to generate draft', 'error');
+                    }
+                  } catch (error) {
+                    console.error('Draft generation error:', error);
+                    const msg = error.message || error.details?.message || 'Failed to generate draft.';
+                    showToast(`Draft error: ${msg}`, 'error');
+                  } finally {
+                    setDraftGenerating(false);
+                    setDraftProgress('');
+                  }
+                }}
+                disabled={draftGenerating}
+                className={`px-4 py-2 rounded text-sm flex items-center gap-2 transition-colors ${draft
+                  ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300'
+                  : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white'
+                  } disabled:opacity-60 disabled:cursor-not-allowed`}
+                title={draft ? 'Scroll to generated draft' : 'Generate a research draft with AI figure analysis'}
+              >
+                {draftGenerating ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
+                    <span className="max-w-[180px] truncate">{draftProgress || 'Generating...'}</span>
+                  </>
+                ) : draft ? (
+                  <>
+                    <CheckCircle className="w-4 h-4" />
+                    <span>Draft Ready</span>
+                  </>
+                ) : (
+                  <>
+                    <PenLine className="w-4 h-4" />
+                    <span>Generate Draft</span>
+                  </>
+                )}
+              </button>
+            )}
           </>
         )}
       </div>
@@ -1234,6 +1315,157 @@ const DetailPanel = ({ paper, onClose }) => {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Generated Draft Display */}
+      {draft && (
+        <div ref={draftRef} className="p-4 border-t-2 border-emerald-300 bg-emerald-50">
+          <div className="flex items-center justify-between mb-2">
+            <button
+              onClick={() => setDraftMinimized(prev => !prev)}
+              className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+              title={draftMinimized ? 'Expand draft' : 'Minimize draft'}
+            >
+              <PenLine className="w-5 h-5 text-emerald-600" />
+              <h3 className="text-base font-semibold text-black">AI Research Draft</h3>
+              {draftFigures.length > 0 && (
+                <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">
+                  {draftFigures.length} figures analyzed
+                </span>
+              )}
+              {draftMinimized ? (
+                <ChevronDown className="w-4 h-4 text-gray-500" />
+              ) : (
+                <ChevronUp className="w-4 h-4 text-gray-500" />
+              )}
+            </button>
+            {!draftMinimized && (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => {
+                    const sections = [
+                      draft.introduction && `# Introduction\n\n${draft.introduction}`,
+                      draft.literature_context && `# Literature Context\n\n${draft.literature_context}`,
+                      draft.methodology_overview && `# Methodology Overview\n\n${draft.methodology_overview}`,
+                      draft.key_analysis && `# Key Analysis\n\n${draft.key_analysis}`,
+                      draft.figure_discussions && draft.figure_discussions !== 'No figures available' && `# Figure Discussions\n\n${draft.figure_discussions}`,
+                      draft.conclusion && `# Conclusion\n\n${draft.conclusion}`,
+                    ].filter(Boolean).join('\n\n---\n\n');
+
+                    const figureSection = draftFigures.length > 0
+                      ? '\n\n---\n\n# Figure Analyses\n\n' + draftFigures.map((f, i) =>
+                        `## Figure ${f.figure_number || i + 1} (Page ${f.page_number || '?'})\nType: ${f.chart_type || 'Unknown'}\nDescription: ${f.description || 'N/A'}\nInsights: ${f.data_insights || 'N/A'}`
+                      ).join('\n\n')
+                      : '';
+
+                    navigator.clipboard.writeText(sections + figureSection);
+                    showToast('Draft copied to clipboard', 'success');
+                  }}
+                  className="p-1.5 hover:bg-emerald-100 rounded transition-colors"
+                  title="Copy draft to clipboard"
+                >
+                  <ClipboardCopy className="w-4 h-4 text-emerald-600" />
+                </button>
+                <button
+                  onClick={() => {
+                    const sections = [
+                      draft.introduction && `INTRODUCTION\n\n${draft.introduction}`,
+                      draft.literature_context && `LITERATURE CONTEXT\n\n${draft.literature_context}`,
+                      draft.methodology_overview && `METHODOLOGY OVERVIEW\n\n${draft.methodology_overview}`,
+                      draft.key_analysis && `KEY ANALYSIS\n\n${draft.key_analysis}`,
+                      draft.figure_discussions && draft.figure_discussions !== 'No figures available' && `FIGURE DISCUSSIONS\n\n${draft.figure_discussions}`,
+                      draft.conclusion && `CONCLUSION\n\n${draft.conclusion}`,
+                    ].filter(Boolean).join('\n\n' + '='.repeat(60) + '\n\n');
+
+                    const blob = new Blob([sections], { type: 'text/plain' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `draft_${(paper.title || 'untitled').slice(0, 40).replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    showToast('Draft downloaded as .txt', 'success');
+                  }}
+                  className="p-1.5 hover:bg-emerald-100 rounded transition-colors"
+                  title="Download draft as .txt"
+                >
+                  <Download className="w-4 h-4 text-emerald-600" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {!draftMinimized && (
+            <>
+              <div className="space-y-3 mt-2">
+                {[
+                  { key: 'introduction', label: 'Introduction', icon: '📖' },
+                  { key: 'literature_context', label: 'Literature Context', icon: '📚' },
+                  { key: 'methodology_overview', label: 'Methodology Overview', icon: '🔬' },
+                  { key: 'key_analysis', label: 'Key Analysis', icon: '📊' },
+                  { key: 'figure_discussions', label: 'Figure Discussions', icon: '🖼️' },
+                  { key: 'conclusion', label: 'Conclusion', icon: '✅' },
+                ].map(({ key, label, icon }) => {
+                  const content = draft[key];
+                  if (!content || content === 'No figures available') return null;
+                  const isCollapsed = draftCollapsed[key];
+                  return (
+                    <div key={key} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                      <button
+                        onClick={() => setDraftCollapsed(prev => ({ ...prev, [key]: !prev[key] }))}
+                        className="w-full text-left px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>{icon}</span>
+                          <h4 className="text-sm font-semibold text-gray-800">{label}</h4>
+                        </div>
+                        {isCollapsed ? <Eye className="w-4 h-4 text-gray-400" /> : <EyeOff className="w-4 h-4 text-gray-400" />}
+                      </button>
+                      {!isCollapsed && (
+                        <div className="px-4 pb-4">
+                          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{content}</p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Figure Analyses */}
+                {draftFigures.length > 0 && (
+                  <div className="bg-white border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Image className="w-4 h-4 text-emerald-600" />
+                      <h4 className="text-sm font-semibold text-gray-800">Figure Analysis Details</h4>
+                    </div>
+                    <div className="space-y-3">
+                      {draftFigures.map((fig, idx) => (
+                        <div key={idx} className="border border-emerald-100 bg-emerald-50/50 rounded-lg p-3">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xs font-bold bg-emerald-200 text-emerald-800 px-2 py-0.5 rounded">
+                              Figure {fig.figure_number || idx + 1}
+                            </span>
+                            <span className="text-xs text-gray-500">Page {fig.page_number || '?'}</span>
+                            <span className="text-xs text-emerald-600 font-medium">{fig.chart_type || 'Unknown'}</span>
+                          </div>
+                          {fig.description && (
+                            <p className="text-sm text-gray-700 mb-1"><strong>Description:</strong> {fig.description}</p>
+                          )}
+                          {fig.data_insights && (
+                            <p className="text-sm text-gray-600"><strong>Insights:</strong> {fig.data_insights}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-3 text-center">
+                <p className="text-[10px] text-emerald-400">Generated by GPT-4o with Vision — review and edit before use</p>
+              </div>
+            </>
+          )}
         </div>
       )}
 
