@@ -3,6 +3,7 @@ import re
 from typing import List, Dict, Any, Set, Tuple, Optional
 import requests
 from collections import defaultdict
+from datetime import datetime
 
 OPENALEX_BASE_URL = "https://api.openalex.org"
 SEMANTIC_SCHOLAR_BASE = "https://api.semanticscholar.org/graph/v1"
@@ -48,6 +49,74 @@ def fetch_work_details(work_id: str) -> Optional[Dict[str, Any]]:
     except Exception as e:
         logging.warning(f"Failed to fetch work {work_id}: {str(e)}")
         return None
+
+
+def _enrich_graph_with_metrics(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]) -> None:
+    """Computes Influence Score, PageRank, and Citation Velocity for graph nodes."""
+    current_year = datetime.now().year
+    
+    # 1. Initialize & Citation Velocity
+    for node in nodes:
+        node["inDegree"] = 0
+        node["pageRankScore"] = 1.0 / max(1, len(nodes))  # Initial PR is 1/N
+        
+        year = node.get("year")
+        cites = node.get("citationCount", 0)
+        if year and isinstance(year, int) and year <= current_year:
+            age = max(1, current_year - year)
+            node["citationVelocity"] = round(cites / age, 2)
+        else:
+            node["citationVelocity"] = 0.0
+
+    # 2. In-Degree & Influence Score
+    in_degrees = defaultdict(int)
+    out_degrees = defaultdict(int)
+    for edge in edges:
+        in_degrees[edge["target"]] += 1
+        out_degrees[edge["source"]] += 1
+        
+    max_in_degree = max(in_degrees.values()) if in_degrees else 1
+    
+    for node in nodes:
+        nid = node["id"]
+        node["inDegree"] = in_degrees[nid]
+        node["influenceScore"] = round(in_degrees[nid] / max_in_degree, 4) if max_in_degree > 0 else 0.0
+        
+    # 3. PageRank Algorithm
+    d = 0.85
+    num_iterations = 10
+    num_nodes = len(nodes)
+    
+    if num_nodes == 0:
+        return
+        
+    node_map = {n["id"]: n for n in nodes}
+    incoming_edges = defaultdict(list)
+    for edge in edges:
+        incoming_edges[edge["target"]].append(edge["source"])
+        
+    for _ in range(num_iterations):
+        new_pr = {}
+        for node in nodes:
+            nid = node["id"]
+            pr_sum = 0.0
+            for source_id in incoming_edges[nid]:
+                if source_id in node_map:
+                    source_out = out_degrees[source_id]
+                    if source_out > 0:
+                        pr_sum += node_map[source_id]["pageRankScore"] / source_out
+            
+            # Formula: (1-d)/N + d * sum
+            new_pr[nid] = ((1.0 - d) / num_nodes) + d * pr_sum
+            
+        for nid, score in new_pr.items():
+            node_map[nid]["pageRankScore"] = score
+            
+    # Normalize PageRank to 0-1 range for frontend mapping
+    pr_scores = [n["pageRankScore"] for n in nodes]
+    max_pr = max(pr_scores) if pr_scores else 1.0
+    for node in nodes:
+        node["pageRankScore"] = round(node["pageRankScore"] / max_pr, 4) if max_pr > 0 else 0.0
 
 
 def build_citation_network(paper_ids: List[str], max_depth: int = 1, max_nodes: int = 50) -> Dict[str, Any]:
@@ -143,6 +212,8 @@ def build_citation_network(paper_ids: List[str], max_depth: int = 1, max_nodes: 
     
     # Convert nodes dict to list
     nodes_list = list(nodes.values())
+    
+    _enrich_graph_with_metrics(nodes_list, edges)
     
     logging.info(f"Citation network built: {len(nodes_list)} nodes, {len(edges)} edges")
     
@@ -274,6 +345,8 @@ def _build_network_semantic_scholar(papers: List[Dict[str, Any]], max_depth: int
     
     nodes_list = list(nodes.values())
     
+    _enrich_graph_with_metrics(nodes_list, unique_edges)
+    
     logging.info(f"Semantic Scholar citation network: {len(nodes_list)} nodes, {len(unique_edges)} edges")
     
     return {
@@ -376,6 +449,8 @@ def _build_network_openalex(papers: List[Dict[str, Any]], max_depth: int = 1, ma
             unique_edges.append(edge)
     
     nodes_list = list(nodes.values())
+    
+    _enrich_graph_with_metrics(nodes_list, unique_edges)
     
     logging.info(f"OpenAlex citation network: {len(nodes_list)} nodes, {len(unique_edges)} edges")
     

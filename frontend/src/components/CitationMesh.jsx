@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { X, ZoomIn, ZoomOut, RotateCw, Download, Maximize2, Minimize2 } from 'lucide-react';
+import { X, ZoomIn, ZoomOut, RotateCw, Download, Maximize2, Minimize2, Info } from 'lucide-react';
 
 // Dynamic import for cytoscape - will be loaded when component mounts
 let cytoscape = null;
@@ -141,7 +141,10 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
             citations: nodeData.citationCount || 0,
             authors: authors,
             venue: nodeData.venue || 'N/A',
-            isRoot: nodeData.isRoot
+            isRoot: nodeData.isRoot,
+            influenceScore: nodeData.influenceScore || 0,
+            pageRankScore: nodeData.pageRankScore || 0,
+            citationVelocity: nodeData.citationVelocity || 0
           }
         });
         
@@ -240,6 +243,9 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
               authors: node.authors || [],
               venue: node.venue,
               isRoot: node.isRoot || false,
+              influenceScore: node.influenceScore || 0,
+              pageRankScore: node.pageRankScore || 0,
+              citationVelocity: node.citationVelocity || 0,
             },
             classes: node.isRoot ? 'root-node' : 'citation-node',
           };
@@ -459,10 +465,10 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
     {
       selector: 'node.root-node',
       style: {
-        'background-color': '#3B82F6',
+        'background-color': 'mapData(pageRankScore, 0, 1, #93C5FD, #1E3A8A)',
         'label': labelValue,
-        'width': 'mapData(citationCount, 0, 200, 80, 100)',
-        'height': 'mapData(citationCount, 0, 200, 80, 100)',
+        'width': 'mapData(influenceScore, 0, 1, 70, 110)',
+        'height': 'mapData(influenceScore, 0, 1, 70, 110)',
         'border-width': 3,
         'border-color': '#2563EB',
         'font-weight': '600',
@@ -477,10 +483,10 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
     {
       selector: 'node.citation-node',
       style: {
-        'background-color': '#E2E8F0',
+        'background-color': 'mapData(pageRankScore, 0, 1, #E2E8F0, #475569)',
         'label': labelValue,
-        'width': 'mapData(citationCount, 0, 100, 50, 75)',
-        'height': 'mapData(citationCount, 0, 100, 50, 75)',
+        'width': 'mapData(influenceScore, 0, 1, 45, 85)',
+        'height': 'mapData(influenceScore, 0, 1, 45, 85)',
         'font-size': '10px',
         'font-weight': '500',
         'border-color': '#94A3B8',
@@ -736,21 +742,33 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
                 {tooltip.content.title}
               </h3>
               <div className="space-y-1 text-[11px] text-gray-600">
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-500 w-16">Year</span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-gray-500">Year</span>
                   <span className="font-medium text-gray-900">{tooltip.content.year}</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-500 w-16">Citations</span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-gray-500">Citations</span>
                   <span className="font-medium text-gray-900">{tooltip.content.citations}</span>
                 </div>
-                <div className="flex items-start gap-2">
-                  <span className="text-gray-500 w-16 flex-shrink-0">Authors</span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-gray-500">Influence Score</span>
+                  <span className="font-medium text-blue-600">{(tooltip.content.influenceScore || 0).toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-gray-500">PageRank</span>
+                  <span className="font-medium text-purple-600">{(tooltip.content.pageRankScore || 0).toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-gray-500">Velocity</span>
+                  <span className="font-medium text-green-600">{tooltip.content.citationVelocity}/yr</span>
+                </div>
+                <div className="flex items-start gap-2 pt-1 mt-1 border-t border-gray-100">
+                  <span className="text-gray-500 w-12 flex-shrink-0">Authors</span>
                   <span className="line-clamp-1 text-gray-900">{tooltip.content.authors}</span>
                 </div>
                 {tooltip.content.venue && tooltip.content.venue !== 'N/A' && (
                   <div className="flex items-start gap-2">
-                    <span className="text-gray-500 w-16 flex-shrink-0">Venue</span>
+                    <span className="text-gray-500 w-12 flex-shrink-0">Venue</span>
                     <span className="line-clamp-1 text-gray-900">{tooltip.content.venue}</span>
                   </div>
                 )}
@@ -769,6 +787,35 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
               <p className="text-sm text-gray-500">
                 The papers in your search don't have citation relationships in the current dataset.
               </p>
+            </div>
+          </div>
+        )}
+        
+        {/* Metrics Legend */}
+        {!loading && !error && elements.length > 0 && (
+          <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur-sm border border-gray-200 rounded-md shadow-md p-3 z-10 w-64 text-xs pointer-events-auto">
+            <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-1.5">
+              <Info className="w-4 h-4 text-blue-500" /> Graph Intelligence
+            </h4>
+            <div className="space-y-2.5 text-gray-600">
+              <div className="flex items-start gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-purple-500 mt-1 flex-shrink-0"></div>
+                <div>
+                  <span className="font-medium text-gray-900">PageRank:</span> Measures prestige based on citations from other highly-cited papers. Controls <span className="font-medium text-purple-600">node color</span>.
+                </div>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-blue-500 mt-1 flex-shrink-0"></div>
+                <div>
+                  <span className="font-medium text-gray-900">Influence Score:</span> Represents in-degree centrality (citations within this specific graph). Controls <span className="font-medium text-blue-600">node size</span>.
+                </div>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-green-500 mt-1 flex-shrink-0"></div>
+                <div>
+                  <span className="font-medium text-gray-900">Velocity:</span> The average number of new citations this paper receives per year.
+                </div>
+              </div>
             </div>
           </div>
         )}
