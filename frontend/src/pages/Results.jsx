@@ -10,7 +10,7 @@ import {
 import SearchDropdown from '../components/SearchDropdown';
 import CitationMesh from '../components/CitationMesh';
 import ArticleNotesModal from '../components/ArticleNotesModal';
-import FormattedPaperContent from '../components/FormattedPaperContent';
+
 import { ToastContainer, useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -415,8 +415,7 @@ const DetailPanel = ({ paper, onClose }) => {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
-  const [structuredContent, setStructuredContent] = useState(null);
-  const [extractingText, setExtractingText] = useState(false);
+
   const [draft, setDraft] = useState(null);
   const [draftFigures, setDraftFigures] = useState([]);
   const [draftGenerating, setDraftGenerating] = useState(false);
@@ -454,8 +453,7 @@ const DetailPanel = ({ paper, onClose }) => {
     setShowChat(false);
     setChatMessages([]);
     setChatInput('');
-    setStructuredContent(null);
-    setExtractingText(false);
+
     setDraft(null);
     setDraftFigures([]);
     setDraftGenerating(false);
@@ -693,18 +691,7 @@ const DetailPanel = ({ paper, onClose }) => {
       setSummarizing(false);
     }
 
-    // After summarization, also fetch structured content for formatted view
-    if (pdfUrlForExtract && !structuredContent) {
-      try {
-        const structuredResponse = await semanticScholarAPI.extractStructuredContent(pdfUrlForExtract);
-        if (structuredResponse.status === 'success' && structuredResponse.blocks) {
-          setStructuredContent(structuredResponse);
-        }
-      } catch (err) {
-        console.log('Structured extraction fallback failed:', err.message);
-        // Not critical - user still has raw text
-      }
-    }
+
   };
 
   // Handle chat question
@@ -934,50 +921,7 @@ const DetailPanel = ({ paper, onClose }) => {
                 </>
               )}
             </button>
-            {/* View Full Text button */}
-            {pdfUrlForExtract && (
-              <button
-                onClick={async () => {
-                  if (structuredContent) return; // Already extracted
-                  setExtractingText(true);
-                  try {
-                    const response = await semanticScholarAPI.extractStructuredContent(pdfUrlForExtract);
-                    if (response.status === 'success' && response.blocks) {
-                      setStructuredContent(response);
-                      showToast('Full text extracted and formatted successfully', 'success');
-                    }
-                  } catch (error) {
-                    console.error('Structured extraction error:', error);
-                    showToast(error.message || 'Failed to extract full text', 'error');
-                  } finally {
-                    setExtractingText(false);
-                  }
-                }}
-                disabled={extractingText || !!structuredContent}
-                className={`px-4 py-2 rounded text-sm flex items-center gap-2 transition-colors ${structuredContent
-                  ? 'bg-gray-100 hover:bg-gray-200 text-black border border-gray-300'
-                  : 'bg-black hover:bg-gray-800 text-white'
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
-                title={structuredContent ? 'Full text already extracted' : 'Extract and format the full paper text'}
-              >
-                {extractingText ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
-                    <span>Extracting...</span>
-                  </>
-                ) : structuredContent ? (
-                  <>
-                    <CheckCircle className="w-4 h-4" />
-                    <span>Full Text Loaded</span>
-                  </>
-                ) : (
-                  <>
-                    <FileText className="w-4 h-4" />
-                    <span>View Full Text</span>
-                  </>
-                )}
-              </button>
-            )}
+
             {/* Ask about this paper — show if PDF or abstract is available */}
             {(pdfUrlForExtract || abstract) && (
               <button
@@ -1469,33 +1413,7 @@ const DetailPanel = ({ paper, onClose }) => {
         </div>
       )}
 
-      {/* Full PDF Content Display - Formatted or Raw */}
-      {(structuredContent || pdfContent) && (
-        structuredContent ? (
-          <FormattedPaperContent
-            blocks={structuredContent.blocks}
-            rawText={pdfContent}
-            totalCharacters={structuredContent.total_characters}
-          />
-        ) : (
-          <div className="p-4 border-t-2 border-gray-300 bg-gray-50">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <FileText className="w-5 h-5 text-black" />
-                <h3 className="text-base font-semibold text-black">Extracted PDF Content</h3>
-              </div>
-              <span className="text-xs text-gray-500 font-medium">
-                {pdfContent.length.toLocaleString()} characters | {pdfContent.split(/\s+/).length.toLocaleString()} words
-              </span>
-            </div>
-            <div className="bg-white border-2 border-gray-300 rounded-lg p-4 max-h-[600px] overflow-y-auto shadow-inner">
-              <div className="text-sm text-gray-800 whitespace-pre-wrap font-sans leading-relaxed">
-                {pdfContent}
-              </div>
-            </div>
-          </div>
-        )
-      )}
+
 
       {/* Toast Container */}
       <ToastContainer toasts={toasts} removeToast={removeToast} />

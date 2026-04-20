@@ -940,49 +940,6 @@ export const semanticScholarAPI = {
   },
 
   /**
-   * Extract structured content from a PDF with heading/subheading/body classification
-   * @param {string} pdfUrl - PDF URL
-   * @returns {Promise<Object>} Structured blocks with type classification
-   */
-  async extractStructuredContent(pdfUrl) {
-    try {
-      if (!pdfUrl) {
-        throw new APIError('pdfUrl must be provided', 400);
-      }
-
-      const response = await fetch(`${API_BASE_URL}/semantic-scholar/extract-structured`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ pdf_url: pdfUrl }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new APIError(
-          data.detail?.message || 'Failed to extract structured content',
-          response.status,
-          data.detail
-        );
-      }
-
-      return data;
-    } catch (error) {
-      if (error instanceof APIError) {
-        throw error;
-      }
-
-      throw new APIError(
-        'Network error: Could not connect to server',
-        0,
-        { originalError: error.message }
-      );
-    }
-  },
-
-  /**
    * Ask a question about a paper from any source
    * @param {string} pdfUrl - PDF URL
    * @param {string} question - Question to ask

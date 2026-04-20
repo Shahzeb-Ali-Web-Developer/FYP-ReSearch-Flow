@@ -137,35 +137,3 @@ def get_pdf_text_from_url(pdf_url: str, max_pages: Optional[int] = None) -> Tupl
     return (extracted_text, None)
 
 
-def extract_structured_text_from_pdf(pdf_content: bytes, max_pages: Optional[int] = None) -> list:
-    """
-    Simplified structured extraction to ensure it doesn't fail.
-    """
-    try:
-        doc = fitz.open(stream=pdf_content, filetype="pdf")
-        total_pages = len(doc)
-        pages_to_process = min(max_pages, total_pages) if max_pages else total_pages
-        
-        structured_blocks = []
-        for page_num in range(pages_to_process):
-            page = doc[page_num]
-            blocks = page.get_text("blocks")
-            for b in blocks:
-                text = b[4].strip()
-                if text:
-                    # Simple classification: caps + short = heading, else body
-                    btype = "body"
-                    if text.isupper() and len(text) < 100: btype = "heading"
-                    structured_blocks.append({"type": btype, "text": text})
-        
-        doc.close()
-        return structured_blocks
-    except:
-        return []
-
-
-def get_structured_pdf_text_from_url(pdf_url: str, max_pages: Optional[int] = None) -> Tuple[Optional[list], Optional[str]]:
-    pdf_content, download_error = download_pdf(pdf_url)
-    if pdf_content is None: return (None, download_error)
-    blocks = extract_structured_text_from_pdf(pdf_content, max_pages=max_pages)
-    return (blocks, None)
