@@ -10,6 +10,7 @@ import {
 import SearchDropdown from '../components/SearchDropdown';
 import CitationMesh from '../components/CitationMesh';
 import ArticleNotesModal from '../components/ArticleNotesModal';
+import FloatingBubbles from '../components/FloatingBubbles';
 
 import { ToastContainer, useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
@@ -381,7 +382,7 @@ const StatsPanel = ({
 };
 
 // Detailed slide-in panel (right column)
-const DetailPanel = ({ paper, onClose }) => {
+const DetailPanel = ({ paper, onClose, summaryJobs, onStartSummarize }) => {
   if (!paper) return null;
 
   const { user, isAuthenticated } = useAuth();
@@ -409,8 +410,8 @@ const DetailPanel = ({ paper, onClose }) => {
   const [copiedToClipboard, setCopiedToClipboard] = useState(false);
   const [loadingSaved, setLoadingSaved] = useState(true);
   const [pdfContent, setPdfContent] = useState(null);
-  const [summarizing, setSummarizing] = useState(false);
-  const [summary, setSummary] = useState(null);
+  // Summary state is now derived from the parent's summaryJobs map
+  // so it persists even when the panel is closed/reopened
   const [showChat, setShowChat] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
@@ -431,7 +432,13 @@ const DetailPanel = ({ paper, onClose }) => {
   const abstract = paper.abstract && paper.abstract !== 'N/A' ? paper.abstract : null;
   const abstractPreview = abstract && abstract.length > 300 ? abstract.substring(0, 300) + '...' : abstract;
 
+  // Derive summary state from the shared summaryJobs map
   const paperId = paper.paperId || paper.id || paper.core_id || paper.pmc_id || paper.semantic_scholar_id || paper.google_scholar_id;
+  const currentJob = summaryJobs?.get(paperId);
+  const summarizing = currentJob?.status === 'loading';
+  const summary = currentJob?.status === 'done' ? currentJob.summary : null;
+
+  const paperIdForSaved = paper.paperId || paper.id || paper.core_id || paper.pmc_id || paper.semantic_scholar_id || paper.google_scholar_id;
   const isArxiv = paper.source === 'arXiv' || paper.arxiv_id;
   const isCore = paper.source === 'CORE' || paper.core_id;
   const isPmc = paper.source === 'PMC' || paper.pmc_id;
@@ -445,11 +452,11 @@ const DetailPanel = ({ paper, onClose }) => {
   const googleScholarId = paper.google_scholar_id;
   const pdfUrlForExtract = paper.pdf_url || paper.openAccessPdf || pdfUrl;
 
-  // Reset PDF content, summary, and chat when paper changes
+  // Reset PDF content, chat, and draft when paper changes
+  // NOTE: summary/summarizing are NOT reset here — they are derived from
+  // the parent's summaryJobs map, so background jobs survive panel changes.
   useEffect(() => {
     setPdfContent(null);
-    setSummary(null);
-    setSummarizing(false);
     setShowChat(false);
     setChatMessages([]);
     setChatInput('');
@@ -460,18 +467,33 @@ const DetailPanel = ({ paper, onClose }) => {
     setDraftProgress('');
     setDraftCollapsed({});
     setDraftMinimized(false);
+
+    // If we have a completed summary job, restore the PDF content from it
+    const job = summaryJobs?.get(paperId);
+    if (job?.status === 'done' && job.fullText) {
+      setPdfContent(job.fullText);
+    }
   }, [paper]);
+
+  // Auto-scroll to summary when a background job completes while panel is open
+  useEffect(() => {
+    if (summary && summaryRef.current) {
+      setTimeout(() => {
+        summaryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 200);
+    }
+  }, [summary]);
 
   // Check if article is saved when component mounts or paper changes
   useEffect(() => {
     const checkSavedStatus = async () => {
-      if (!isAuthenticated || !paperId) {
+      if (!isAuthenticated || !paperIdForSaved) {
         setLoadingSaved(false);
         return;
       }
 
       try {
-        const savedArticle = await savedArticlesAPI.getSavedArticle(paperId);
+        const savedArticle = await savedArticlesAPI.getSavedArticle(paperIdForSaved);
         if (savedArticle) {
           setIsSaved(true);
           setSavedArticleId(savedArticle.id);
@@ -489,7 +511,7 @@ const DetailPanel = ({ paper, onClose }) => {
     };
 
     checkSavedStatus();
-  }, [paperId, isAuthenticated]);
+  }, [paperIdForSaved, isAuthenticated]);
 
   // Close link dropdown when clicking outside
   useEffect(() => {
@@ -564,13 +586,13 @@ const DetailPanel = ({ paper, onClose }) => {
 
     try {
       if (isSaved) {
-        await savedArticlesAPI.unsaveArticle(paperId);
+        await savedArticlesAPI.unsaveArticle(paperIdForSaved);
         setIsSaved(false);
         setSavedArticleId(null);
         setNotes('');
         showToast('Article removed from saved', 'success');
       } else {
-        const savedArticle = await savedArticlesAPI.saveArticle(paperId, paper);
+        const savedArticle = await savedArticlesAPI.saveArticle(paperIdForSaved, paper);
         setIsSaved(true);
         setSavedArticleId(savedArticle.id);
         showToast('Article saved to favorites', 'success');
@@ -605,7 +627,7 @@ const DetailPanel = ({ paper, onClose }) => {
 
   const handleSaveNotes = async (newNotes) => {
     try {
-      await savedArticlesAPI.updateArticleNotes(paperId, newNotes);
+      await savedArticlesAPI.updateArticleNotes(paperIdForSaved, newNotes);
       setNotes(newNotes);
       showToast('Notes saved successfully', 'success');
     } catch (error) {
@@ -615,11 +637,10 @@ const DetailPanel = ({ paper, onClose }) => {
     }
   };
 
-  // Handle summarization - extracts PDF and generates summary in one step
-  const handleSummarize = async () => {
+  // Handle summarization — delegates to parent's background summarizer
+  const handleSummarize = () => {
     // Check if PDF is available for extraction
     if (!pdfUrlForExtract) {
-      // For Semantic Scholar or Google Scholar papers, if no PDF but have abstract, provide helpful message
       if ((isSemanticScholar || isGoogleScholar) && abstract) {
         showToast('PDF not available for this paper. Summarization requires PDF access.', 'info');
       } else {
@@ -628,70 +649,20 @@ const DetailPanel = ({ paper, onClose }) => {
       return;
     }
 
-    // Check if already summarized
-    if (summary) {
-      return; // Already summarized
-    }
-
-    setSummarizing(true);
-    try {
-      let response;
-      // Use appropriate API based on source - all APIs can handle any PDF URL
-      // But we use the source-specific API for consistency
-      if (isArxiv) {
-        response = await arxivAPI.summarizePaper(arxivId || null, pdfUrlForExtract || null);
-      } else if (isCore) {
-        response = await coreAPI.summarizePaper(pdfUrlForExtract);
-      } else if (isPmc) {
-        response = await pmcAPI.summarizePaper(pdfUrlForExtract);
-      } else if (isSemanticScholar) {
-        // Semantic Scholar API works with any PDF URL from any source
-        response = await semanticScholarAPI.summarizePaper(pdfUrlForExtract);
-      } else if (isGoogleScholar) {
-        // Google Scholar API works with any PDF URL from any source
-        response = await googleScholarAPI.summarizePaper(pdfUrlForExtract);
-      } else {
-        // Fallback to Semantic Scholar API (works with any PDF URL)
-        response = await semanticScholarAPI.summarizePaper(pdfUrlForExtract);
-      }
-
-      if (response.status === 'success') {
-        // Set summary if available
-        if (response.summary) {
-          setSummary(response.summary);
-        }
-
-        // Also set PDF content if returned
-        if (response.full_text) {
-          setPdfContent(response.full_text);
-        }
-
-        showToast('PDF extracted and summary generated successfully using AI (GPT-4)', 'success');
-
-        // Scroll to summary section after React renders it
+    // Check if already summarized or in progress
+    if (summary || summarizing) {
+      if (summary) {
+        // Scroll to the existing summary
         setTimeout(() => {
           summaryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }, 150);
-      } else {
-        showToast('Failed to generate summary', 'error');
       }
-    } catch (error) {
-      console.error('Error summarizing paper:', error);
-
-      // Handle specific PDF not available errors
-      if (error.status === 404 || (error.details && error.details.error === 'PDF not available')) {
-        const errorMessage = error.details?.message || error.message || 'PDF is not available for this paper.';
-        showToast(errorMessage, 'error');
-      } else {
-        // Generic error handling
-        const errorMessage = error.message || error.details?.message || 'Failed to summarize paper. Please try again.';
-        showToast(`Failed to summarize: ${errorMessage}`, 'error');
-      }
-    } finally {
-      setSummarizing(false);
+      return;
     }
 
-
+    // Delegate to the parent's background summarizer
+    onStartSummarize(paper);
+    showToast('Summarization started — you can browse other papers while it processes', 'info');
   };
 
   // Handle chat question
@@ -1657,6 +1628,116 @@ export default function Results() {
   const [selectedInstitutions, setSelectedInstitutions] = useState([]);
   const [openAccessOnly, setOpenAccessOnly] = useState(false);
   const [fromCache, setFromCache] = useState(false);
+
+  // ===== Background Summarization State =====
+  // Map<paperId, { paperId, paper, status, summary, fullText, error, startedAt }>
+  const [summaryJobs, setSummaryJobs] = useState(new Map());
+  const { toasts: resultToasts, showToast: showResultToast, removeToast: removeResultToast } = useToast();
+
+  /**
+   * Start a background summarization job for a paper.
+   * The API call runs independently of the DetailPanel lifecycle,
+   * so closing the panel does NOT cancel the operation.
+   */
+  const startBackgroundSummarize = useCallback(async (paper) => {
+    const id = paper.paperId || paper.id || paper.core_id || paper.pmc_id || paper.semantic_scholar_id || paper.google_scholar_id;
+    if (!id) return;
+
+    // Don't start if already loading or done
+    const existing = summaryJobs.get(id);
+    if (existing && (existing.status === 'loading' || existing.status === 'done')) return;
+
+    // Add the job as loading
+    setSummaryJobs(prev => {
+      const next = new Map(prev);
+      next.set(id, {
+        paperId: id,
+        paper: paper,
+        status: 'loading',
+        summary: null,
+        fullText: null,
+        error: null,
+        startedAt: Date.now(),
+      });
+      return next;
+    });
+
+    // Determine the correct API
+    const isArxiv = paper.source === 'arXiv' || paper.arxiv_id;
+    const isCore = paper.source === 'CORE' || paper.core_id;
+    const isPmc = paper.source === 'PMC' || paper.pmc_id;
+    const isSemanticScholar = paper.source === 'Semantic Scholar' || (paper.semantic_scholar_id && !isArxiv && !isCore && !isPmc);
+    const isGoogleScholar = paper.source === 'Google Scholar' || paper.google_scholar_id;
+    const pdfUrl = paper.pdf_url || paper.openAccessPdf || (paper.url && paper.url.toLowerCase().endsWith('.pdf') ? paper.url : null);
+    const arxivId = paper.arxiv_id;
+
+    try {
+      let response;
+      if (isArxiv) {
+        response = await arxivAPI.summarizePaper(arxivId || null, pdfUrl || null);
+      } else if (isCore) {
+        response = await coreAPI.summarizePaper(pdfUrl);
+      } else if (isPmc) {
+        response = await pmcAPI.summarizePaper(pdfUrl);
+      } else if (isSemanticScholar) {
+        response = await semanticScholarAPI.summarizePaper(pdfUrl);
+      } else if (isGoogleScholar) {
+        response = await googleScholarAPI.summarizePaper(pdfUrl);
+      } else {
+        response = await semanticScholarAPI.summarizePaper(pdfUrl);
+      }
+
+      if (response.status === 'success' && response.summary) {
+        setSummaryJobs(prev => {
+          const next = new Map(prev);
+          next.set(id, {
+            ...prev.get(id),
+            status: 'done',
+            summary: response.summary,
+            fullText: response.full_text || null,
+          });
+          return next;
+        });
+        showResultToast(`Summary ready: "${(paper.title || 'Paper').substring(0, 50)}…"`, 'success', 5000);
+      } else {
+        throw new Error('Failed to generate summary');
+      }
+    } catch (error) {
+      console.error('Background summarization error:', error);
+      const errorMsg = error.message || error.details?.message || 'Summarization failed';
+      setSummaryJobs(prev => {
+        const next = new Map(prev);
+        next.set(id, {
+          ...prev.get(id),
+          status: 'error',
+          error: errorMsg,
+        });
+        return next;
+      });
+      showResultToast(`Summary failed: "${(paper.title || 'Paper').substring(0, 40)}…" — ${errorMsg}`, 'error', 5000);
+    }
+  }, [summaryJobs, showResultToast]);
+
+  /**
+   * Open the detail panel for a paper from a floating bubble click.
+   */
+  const handleBubbleClick = useCallback((paperId) => {
+    const job = summaryJobs.get(paperId);
+    if (job?.paper) {
+      setSelectedPaper(job.paper);
+    }
+  }, [summaryJobs]);
+
+  /**
+   * Dismiss a summary job bubble.
+   */
+  const handleBubbleDismiss = useCallback((paperId) => {
+    setSummaryJobs(prev => {
+      const next = new Map(prev);
+      next.delete(paperId);
+      return next;
+    });
+  }, []);
 
   // Related searches state (fetched here, passed to StatsPanel)
   const [relatedSearches, setRelatedSearches] = useState([]);
@@ -2715,7 +2796,12 @@ export default function Results() {
         {/* Detail Panel Overlay */}
         {selectedPaper && (
           <>
-            <DetailPanel paper={selectedPaper} onClose={() => setSelectedPaper(null)} />
+            <DetailPanel
+              paper={selectedPaper}
+              onClose={() => setSelectedPaper(null)}
+              summaryJobs={summaryJobs}
+              onStartSummarize={startBackgroundSummarize}
+            />
             <div
               className="fixed inset-0 bg-black/30 z-40 md:hidden"
               onClick={() => setSelectedPaper(null)}
@@ -2741,6 +2827,18 @@ export default function Results() {
           />
         )}
       </div>
+
+      {/* Floating Bubbles for background summarization jobs */}
+      {summaryJobs.size > 0 && (
+        <FloatingBubbles
+          summaryJobs={summaryJobs}
+          onBubbleClick={handleBubbleClick}
+          onDismiss={handleBubbleDismiss}
+        />
+      )}
+
+      {/* Results-level Toast Container for background job notifications */}
+      <ToastContainer toasts={resultToasts} removeToast={removeResultToast} />
     </div>
   );
 }
