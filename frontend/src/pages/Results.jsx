@@ -5,7 +5,7 @@ import {
   BookOpen, X, FileText, MessageSquare, Code, Download,
   ChevronDown, ChevronUp, Plus, Trash2, MoreVertical, ArrowUpDown, BarChart3, CheckSquare, Network,
   Check, Bookmark, Share2, Copy, CheckCircle, Building2, Send, Bot, User, Compass, TrendingUp,
-  PenLine, Image, ClipboardCopy, Eye, EyeOff
+  PenLine, Image, ClipboardCopy, Eye, EyeOff, Filter
 } from 'lucide-react';
 import SearchDropdown from '../components/SearchDropdown';
 import CitationMesh from '../components/CitationMesh';
@@ -214,38 +214,6 @@ const StatsPanel = ({
       </div>
 
       <div className="p-4 space-y-6 md:space-y-4">
-        {/* Top row: Total results and Open Access */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Total Results */}
-          <div className="border border-gray-200 rounded-lg p-4 md:col-span-1">
-            <p className="text-2xl font-semibold text-black">
-              {papers.length.toLocaleString()} results
-            </p>
-          </div>
-
-          {/* Open Access */}
-          <button
-            type="button"
-            onClick={onToggleOpenAccess}
-            className={`border border-gray-200 rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer transition-colors ${openAccessOnly ? 'bg-black text-white' : 'bg-white hover:bg-gray-50'
-              }`}
-          >
-            <div
-              className={`w-20 h-20 rounded-full border-[10px] flex items-center justify-center mb-2 ${openAccessOnly ? 'border-white' : 'border-gray-300'
-                }`}
-            >
-              <span className={`text-xl font-bold ${openAccessOnly ? 'text-white' : 'text-black'}`}>
-                {openAccessPercent}%
-              </span>
-            </div>
-            <p className={`text-sm font-medium ${openAccessOnly ? 'text-white' : 'text-black'}`}>
-              Open Access
-            </p>
-            <p className={`text-sm ${openAccessOnly ? 'text-gray-200' : 'text-gray-600'}`}>
-              {openAccessCount.toLocaleString()}
-            </p>
-          </button>
-        </div>
 
         {/* Related Searches */}
         <div className="border-b border-gray-200 pb-4 pt-2">
@@ -1627,6 +1595,7 @@ export default function Results() {
   const [selectedTypes, setSelectedTypes] = useState([]);
   const [selectedInstitutions, setSelectedInstitutions] = useState([]);
   const [openAccessOnly, setOpenAccessOnly] = useState(false);
+  const [fullContentOnly, setFullContentOnly] = useState(false);
   const [fromCache, setFromCache] = useState(false);
 
   // ===== Background Summarization State =====
@@ -2174,9 +2143,16 @@ export default function Results() {
       filtered = filtered.filter(p => p.isOpenAccess === true);
     }
 
+    if (fullContentOnly) {
+      filtered = filtered.filter(p => {
+        const hasPdf = p.pdf_url || p.openAccessPdf || (p.url && typeof p.url === 'string' && p.url.toLowerCase().endsWith('.pdf'));
+        return Boolean(hasPdf);
+      });
+    }
+
     // If no active filters at all, show all papers
     const hasStatsFilters =
-      openAccessOnly || selectedYears.length > 0 || selectedTopics.length > 0 || selectedTypes.length > 0 || selectedInstitutions.length > 0;
+      openAccessOnly || fullContentOnly || selectedYears.length > 0 || selectedTopics.length > 0 || selectedTypes.length > 0 || selectedInstitutions.length > 0;
     console.log('Filter result:', {
       hasActiveFilters,
       hasStatsFilters,
@@ -2197,7 +2173,7 @@ export default function Results() {
     const sortedResult = sortPapers(result, sortOption);
     setPapers(sortedResult);
     setCurrentPage(1); // Reset to first page when filters change
-  }, [allPapers, filters, selectedYears, selectedTopics, selectedTypes, selectedInstitutions, openAccessOnly, sortOption, sortPapers]);
+  }, [allPapers, filters, selectedYears, selectedTopics, selectedTypes, selectedInstitutions, openAccessOnly, fullContentOnly, sortOption, sortPapers]);
 
   useEffect(() => {
     if (!topic) {
@@ -2585,14 +2561,41 @@ export default function Results() {
               </div>
               <div className="flex items-center gap-2">
                 {papers.length > 0 && (
-                  <button
-                    onClick={() => setShowCitationMesh(true)}
-                    className="px-3 py-1.5 bg-black text-white rounded text-sm hover:bg-gray-800 transition-colors flex items-center gap-2"
-                    title="View Citation Network"
-                  >
-                    <Network className="w-4 h-4" />
-                    Citation Mesh
-                  </button>
+                  <>
+                    {/* Sliding Toggle: All Results ↔ Full Access */}
+                    <div
+                      onClick={() => setFullContentOnly(!fullContentOnly)}
+                      className="relative flex items-center bg-gray-200 rounded-full cursor-pointer select-none h-8 w-[200px] border border-gray-300 transition-colors duration-300"
+                      title={fullContentOnly ? 'Showing only papers with accessible full content' : 'Showing all results'}
+                    >
+                      {/* Sliding knob */}
+                      <div
+                        className={`absolute top-[2px] h-[28px] w-[98px] rounded-full bg-black shadow-md transition-all duration-300 ease-in-out ${
+                          fullContentOnly ? 'left-[100px]' : 'left-[2px]'
+                        }`}
+                      />
+                      {/* Left label */}
+                      <span className={`relative z-10 flex-1 text-center text-xs font-semibold transition-colors duration-300 ${
+                        !fullContentOnly ? 'text-white' : 'text-gray-500'
+                      }`}>
+                        All Results
+                      </span>
+                      {/* Right label */}
+                      <span className={`relative z-10 flex-1 text-center text-xs font-semibold transition-colors duration-300 ${
+                        fullContentOnly ? 'text-white' : 'text-gray-500'
+                      }`}>
+                        Full Access
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setShowCitationMesh(true)}
+                      className="px-3 py-1.5 bg-black text-white rounded text-sm hover:bg-gray-800 transition-colors flex items-center gap-2"
+                      title="View Citation Network"
+                    >
+                      <Network className="w-4 h-4" />
+                      Citation Mesh
+                    </button>
+                  </>
                 )}
                 {/* Sort Dropdown */}
                 <div className="relative sort-dropdown-container">

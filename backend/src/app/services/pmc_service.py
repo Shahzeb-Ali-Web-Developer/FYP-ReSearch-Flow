@@ -9,7 +9,83 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 PMC_EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
-PMC_BASE_URL = "https://www.ncbi.nlm.nih.gov/pmc/articles/"
+PMC_BASE_URL = "https://pmc.ncbi.nlm.nih.gov/articles/"
+
+
+def get_pmc_fulltext_from_xml(pmc_id: str) -> Optional[str]:
+    """
+    Fetch the full-text of a PMC article directly from E-utilities XML API.
+    This bypasses the browser-only PDF URL that requires human verification.
+    
+    Args:
+        pmc_id: The numeric PMC ID (without 'PMC' prefix)
+    
+    Returns:
+        Extracted full-text string, or None if not available
+    """
+    try:
+        clean_id = pmc_id.replace('PMC', '').strip()
+        fetch_url = f"{PMC_EUTILS_BASE}/efetch.fcgi"
+        params = {
+            "db": "pmc",
+            "id": clean_id,
+            "retmode": "xml",
+            "rettype": "full"  # Full article text
+        }
+        
+        response = requests.get(fetch_url, params=params, timeout=60)
+        response.raise_for_status()
+        
+        root = ET.fromstring(response.content)
+        
+        # Extract all text from the <body> element of the article
+        body = root.find(".//body")
+        if body is None:
+            logging.warning(f"No <body> element found in PMC XML for {pmc_id}")
+            return None
+        
+        # Walk through all sections and paragraphs to build full text
+        text_parts = []
+        for section in body.iter():
+            if section.tag in ('sec', 'p', 'title'):
+                # Get direct text (itertext gets all nested text)
+                text = ''.join(section.itertext()).strip()
+                if text and section.tag == 'title':
+                    text_parts.append(f"\n## {text}\n")
+                elif text and section.tag == 'p':
+                    text_parts.append(text)
+        
+        if not text_parts:
+            # Fallback: just grab ALL text from body
+            all_text = ''.join(body.itertext()).strip()
+            if all_text and len(all_text) > 200:
+                return all_text
+            return None
+        
+        # Deduplicate (section text includes child paragraph text)
+        # Use only paragraph and title-level text
+        seen = set()
+        unique_parts = []
+        for part in text_parts:
+            # Use first 100 chars as dedup key to handle slight variations
+            key = part[:100].strip()
+            if key not in seen:
+                seen.add(key)
+                unique_parts.append(part)
+        
+        full_text = '\n\n'.join(unique_parts)
+        
+        if len(full_text.strip()) < 200:
+            logging.warning(f"PMC XML full-text too short for {pmc_id}: {len(full_text)} chars")
+            return None
+        
+        logging.info(f"Successfully extracted {len(full_text)} chars from PMC XML for {pmc_id}")
+        return full_text
+        
+    except Exception as e:
+        logging.error(f"Error fetching PMC full-text XML for {pmc_id}: {str(e)}")
+        return None
+
 
 
 def fetch_pmc_papers(query: str, limit: int = 20) -> List[Dict[str, Any]]:
@@ -202,8 +278,10 @@ def _parse_pmc_article(article: ET.Element, pmc_id: Optional[str] = None) -> Opt
             if not doi.startswith("http"):
                 doi = f"https://doi.org/{doi}"
         
-        # PDF URL - PMC provides PDFs for open access articles
-        pdf_url = f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_id}/pdf/"
+        # PDF URL - EuropePMC is currently unreliable, using the official PMC PDF endpoint 
+        # (Note: direct NCBI PDF downloads may require human verification, but our backend 
+        # uses E-utilities XML for full-text extraction to bypass this when summarizing)
+        pdf_url = f"https://pmc.ncbi.nlm.nih.gov/articles/PMC{pmc_id}/pdf/"
         
         # Article URL
         article_url = f"{PMC_BASE_URL}PMC{pmc_id}/"

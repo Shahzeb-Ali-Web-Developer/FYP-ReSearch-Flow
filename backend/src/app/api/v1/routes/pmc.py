@@ -4,7 +4,7 @@ PubMed Central (PMC) Search and Summarization Routes
 from fastapi import APIRouter, HTTPException, Body
 from typing import Optional
 import logging
-from ....services.pmc_service import fetch_pmc_papers
+from ....services.pmc_service import fetch_pmc_papers, get_pmc_fulltext_from_xml
 from ....services.pdf_service import get_pdf_text_from_url
 from ....services.summarization_service import summarize_paper
 from ....services.chat_service import ask_about_paper
@@ -148,17 +148,36 @@ async def summarize_paper_endpoint(
     """
     try:
         pdf_url = request_data.get("pdf_url")
+        pmc_id = request_data.get("pmc_id")  # Optional: direct PMC ID
         
-        if not pdf_url:
+        if not pdf_url and not pmc_id:
             raise HTTPException(
                 status_code=400,
-                detail="'pdf_url' must be provided"
+                detail="'pdf_url' or 'pmc_id' must be provided"
             )
         
-        logging.info(f"Summarizing paper from: {pdf_url}")
+        # Try to extract PMC ID from URL if not provided directly
+        if not pmc_id and pdf_url:
+            import re
+            match = re.search(r'PMC(\d+)', pdf_url)
+            if match:
+                pmc_id = match.group(1)
         
-        # Extract text from PDF (full extraction - no page limit)
-        pdf_text, extraction_error = get_pdf_text_from_url(pdf_url, max_pages=None)
+        pdf_text = None
+        extraction_error = None
+        
+        # Strategy 1: Try PMC XML full-text API (no PDF download needed, bypasses interstitial)
+        if pmc_id:
+            logging.info(f"Trying PMC XML full-text extraction for PMC{pmc_id}")
+            xml_text = get_pmc_fulltext_from_xml(pmc_id)
+            if xml_text and len(xml_text.strip()) > 200:
+                pdf_text = xml_text
+                logging.info(f"Successfully got full-text from PMC XML: {len(pdf_text)} chars")
+        
+        # Strategy 2: Fall back to PDF download (uses Europe PMC direct link)
+        if pdf_text is None and pdf_url:
+            logging.info(f"XML extraction failed/unavailable, trying PDF download: {pdf_url}")
+            pdf_text, extraction_error = get_pdf_text_from_url(pdf_url, max_pages=None)
         
         if pdf_text is None:
             error_message = extraction_error or "PDF is not available or could not be processed."
@@ -224,8 +243,28 @@ async def ask_question_endpoint(
                     status_code=400,
                     detail="Either 'pdf_url' or 'pdf_text' must be provided"
                 )
-            logging.info(f"Extracting PDF from URL: {pdf_url}")
-            pdf_text, extraction_error = get_pdf_text_from_url(pdf_url, max_pages=None)
+            
+            pdf_text = None
+            extraction_error = None
+            
+            # Extract PMC ID from URL to try XML API first
+            import re
+            pmc_id = request_data.get("pmc_id")
+            if not pmc_id and pdf_url:
+                match = re.search(r'PMC(\d+)', pdf_url)
+                if match:
+                    pmc_id = match.group(1)
+            
+            if pmc_id:
+                logging.info(f"Trying PMC XML full-text extraction for PMC{pmc_id} for Q&A")
+                xml_text = get_pmc_fulltext_from_xml(pmc_id)
+                if xml_text and len(xml_text.strip()) > 200:
+                    pdf_text = xml_text
+                    logging.info(f"Successfully got full-text from PMC XML for Q&A: {len(pdf_text)} chars")
+            
+            if pdf_text is None:
+                logging.info(f"XML extraction failed/unavailable, trying PDF download: {pdf_url}")
+                pdf_text, extraction_error = get_pdf_text_from_url(pdf_url, max_pages=None)
             
             if pdf_text is None:
                 error_message = extraction_error or "PDF is not available or could not be processed."
