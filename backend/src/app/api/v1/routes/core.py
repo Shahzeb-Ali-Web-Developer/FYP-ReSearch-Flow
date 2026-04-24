@@ -137,10 +137,14 @@ async def summarize_paper_endpoint(
 ):
     """
     Summarize a research paper from CORE.
+    Works with any PDF URL regardless of original source.
+    Falls back to abstract-based summarization if PDF is unavailable.
     
     Request body:
         {
-            "pdf_url": "https://example.com/paper.pdf"
+            "pdf_url": "https://example.com/paper.pdf",
+            "title": "Optional paper title for fallback",
+            "abstract": "Optional abstract for fallback"
         }
     
     Returns:
@@ -148,20 +152,38 @@ async def summarize_paper_endpoint(
     """
     try:
         pdf_url = request_data.get("pdf_url")
+        title = request_data.get("title", "")
+        abstract = request_data.get("abstract", "")
         
-        if not pdf_url:
+        if not pdf_url and not abstract:
             raise HTTPException(
                 status_code=400,
-                detail="'pdf_url' must be provided"
+                detail="'pdf_url' or 'abstract' must be provided"
             )
         
-        logging.info(f"Summarizing paper from: {pdf_url}")
+        pdf_text = None
+        fallback_used = False
         
-        # Extract text from PDF (full extraction - no page limit)
-        pdf_text, extraction_error = get_pdf_text_from_url(pdf_url, max_pages=None)
+        # Try PDF extraction first
+        if pdf_url:
+            logging.info(f"Summarizing paper from: {pdf_url}")
+            pdf_text, extraction_error = get_pdf_text_from_url(pdf_url, max_pages=None)
+            
+            if pdf_text is None:
+                logging.warning(f"PDF extraction failed: {extraction_error}")
+        
+        # Fallback: use abstract if PDF extraction failed
+        if pdf_text is None and abstract and len(abstract.strip()) > 50:
+            logging.info(f"Using abstract-based fallback summarization for: {title[:80]}")
+            fallback_text = ""
+            if title:
+                fallback_text += f"Title: {title}\n\n"
+            fallback_text += f"Abstract: {abstract}"
+            pdf_text = fallback_text
+            fallback_used = True
         
         if pdf_text is None:
-            error_message = extraction_error or "PDF is not available or could not be processed."
+            error_message = "PDF is not available and no abstract was provided for fallback summarization."
             raise HTTPException(
                 status_code=404,
                 detail={
@@ -171,16 +193,22 @@ async def summarize_paper_endpoint(
             )
         
         # Generate summary using LLM (passes extracted content to LLM)
-        logging.info(f"Generating summary for {len(pdf_text)} characters of text using LLM")
+        logging.info(f"Generating summary for {len(pdf_text)} characters of text using LLM (fallback={fallback_used})")
         summary = summarize_paper(pdf_text, max_sentences=5, use_llm=True)
         
-        return {
+        response = {
             "status": "success",
             "pdf_url": pdf_url,
             "summary": summary,
-            "full_text": pdf_text,  # Include full extracted text
+            "full_text": pdf_text if not fallback_used else None,
             "text_length": len(pdf_text)
         }
+        
+        if fallback_used:
+            response["fallback"] = True
+            response["fallback_note"] = "Summary was generated from the paper's abstract because the PDF could not be accessed directly."
+        
+        return response
         
     except HTTPException:
         raise

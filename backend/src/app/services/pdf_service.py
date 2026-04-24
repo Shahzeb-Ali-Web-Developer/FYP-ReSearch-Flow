@@ -9,6 +9,19 @@ from typing import Optional, Tuple
 import fitz  # PyMuPDF
 
 
+# Domains that require human verification (CAPTCHA) and block automated downloads
+BLOCKED_PDF_DOMAINS = [
+    'researchgate.net',
+    'academia.edu',
+]
+
+
+def _is_blocked_domain(url: str) -> bool:
+    """Check if URL belongs to a domain that blocks automated PDF downloads."""
+    url_lower = url.lower()
+    return any(domain in url_lower for domain in BLOCKED_PDF_DOMAINS)
+
+
 def download_pdf(url: str, timeout: int = 30) -> Tuple[Optional[bytes], Optional[str]]:
     """
     Download PDF from URL.
@@ -23,6 +36,11 @@ def download_pdf(url: str, timeout: int = 30) -> Tuple[Optional[bytes], Optional
         If failed: (None, error_message)
     """
     try:
+        # Check for domains that require human verification
+        if _is_blocked_domain(url):
+            logging.info(f"Skipping blocked domain (requires CAPTCHA): {url}")
+            return (None, "BLOCKED_DOMAIN: This paper is hosted on a platform that requires human verification. Summary will be generated from the abstract instead.")
+
         # EXACT headers from your working snippet
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'

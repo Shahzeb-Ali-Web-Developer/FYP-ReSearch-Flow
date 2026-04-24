@@ -1703,21 +1703,24 @@ export default function Results() {
     const isGoogleScholar = paper.source === 'Google Scholar' || paper.google_scholar_id;
     const pdfUrl = paper.pdf_url || paper.openAccessPdf || (paper.url && paper.url.toLowerCase().endsWith('.pdf') ? paper.url : null);
     const arxivId = paper.arxiv_id;
+    const title = paper.title || "";
+    const abstract = paper.abstract || paper.snippet || "";
+    const pmcId = paper.pmc_id || null;
 
     try {
       let response;
       if (isArxiv) {
-        response = await arxivAPI.summarizePaper(arxivId || null, pdfUrl || null);
+        response = await arxivAPI.summarizePaper(arxivId || null, pdfUrl || null, title, abstract);
       } else if (isCore) {
-        response = await coreAPI.summarizePaper(pdfUrl);
+        response = await coreAPI.summarizePaper(pdfUrl, title, abstract);
       } else if (isPmc) {
-        response = await pmcAPI.summarizePaper(pdfUrl);
+        response = await pmcAPI.summarizePaper(pdfUrl, pmcId, title, abstract);
       } else if (isSemanticScholar) {
-        response = await semanticScholarAPI.summarizePaper(pdfUrl);
+        response = await semanticScholarAPI.summarizePaper(pdfUrl, title, abstract);
       } else if (isGoogleScholar) {
-        response = await googleScholarAPI.summarizePaper(pdfUrl);
+        response = await googleScholarAPI.summarizePaper(pdfUrl, title, abstract);
       } else {
-        response = await semanticScholarAPI.summarizePaper(pdfUrl);
+        response = await semanticScholarAPI.summarizePaper(pdfUrl, title, abstract);
       }
 
       if (response.status === 'success' && response.summary) {
@@ -1731,7 +1734,12 @@ export default function Results() {
           });
           return next;
         });
-        showResultToast(`Summary ready: "${(paper.title || 'Paper').substring(0, 50)}…"`, 'success', 5000);
+        
+        if (response.fallback) {
+          showResultToast(`Summary (from abstract): "${(paper.title || 'Paper').substring(0, 40)}…"`, 'warning', 6000);
+        } else {
+          showResultToast(`Summary ready: "${(paper.title || 'Paper').substring(0, 50)}…"`, 'success', 5000);
+        }
       } else {
         throw new Error('Failed to generate summary');
       }

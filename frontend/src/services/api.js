@@ -391,9 +391,9 @@ export const arxivAPI = {
    * @param {string} pdfUrl - Optional PDF URL (alternative to arxivId)
    * @returns {Promise<Object>} Summary with structured sections
    */
-  async summarizePaper(arxivId = null, pdfUrl = null) {
+  async summarizePaper(arxivId = null, pdfUrl = null, title = "", abstract = "") {
     try {
-      const requestBody = {};
+      const requestBody = { title, abstract };
       if (arxivId) {
         requestBody.arxiv_id = arxivId;
       } else if (pdfUrl) {
@@ -565,9 +565,11 @@ export const coreAPI = {
   /**
    * Summarize a paper from CORE
    * @param {string} pdfUrl - PDF URL
+   * @param {string} title - Optional title
+   * @param {string} abstract - Optional abstract
    * @returns {Promise<Object>} Summary with structured sections
    */
-  async summarizePaper(pdfUrl) {
+  async summarizePaper(pdfUrl, title = "", abstract = "") {
     try {
       if (!pdfUrl) {
         throw new APIError('pdfUrl must be provided', 400);
@@ -578,7 +580,11 @@ export const coreAPI = {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ pdf_url: pdfUrl }),
+        body: JSON.stringify({ 
+          pdf_url: pdfUrl,
+          title: title,
+          abstract: abstract 
+        }),
       });
 
       const data = await response.json();
@@ -734,10 +740,10 @@ export const pmcAPI = {
    * @param {string} pdfUrl - PDF URL
    * @returns {Promise<Object>} Summary with structured sections
    */
-  async summarizePaper(pdfUrl) {
+  async summarizePaper(pdfUrl, pmcId = null, title = "", abstract = "") {
     try {
-      if (!pdfUrl) {
-        throw new APIError('pdfUrl must be provided', 400);
+      if (!pdfUrl && !pmcId) {
+        throw new APIError('pdfUrl or pmcId must be provided', 400);
       }
 
       const response = await fetch(`${API_BASE_URL}/pmc/summarize`, {
@@ -745,7 +751,12 @@ export const pmcAPI = {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ pdf_url: pdfUrl }),
+        body: JSON.stringify({ 
+          pdf_url: pdfUrl,
+          pmc_id: pmcId,
+          title: title,
+          abstract: abstract
+        }),
       });
 
       const data = await response.json();
@@ -901,7 +912,7 @@ export const semanticScholarAPI = {
    * @param {string} pdfUrl - PDF URL
    * @returns {Promise<Object>} Summary with structured sections
    */
-  async summarizePaper(pdfUrl) {
+  async summarizePaper(pdfUrl, title = "", abstract = "") {
     try {
       if (!pdfUrl) {
         throw new APIError('pdfUrl must be provided', 400);
@@ -912,7 +923,11 @@ export const semanticScholarAPI = {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ pdf_url: pdfUrl }),
+        body: JSON.stringify({ 
+          pdf_url: pdfUrl,
+          title: title,
+          abstract: abstract 
+        }),
       });
 
       const data = await response.json();
@@ -1068,7 +1083,7 @@ export const googleScholarAPI = {
    * @param {string} pdfUrl - PDF URL
    * @returns {Promise<Object>} Summary with structured sections
    */
-  async summarizePaper(pdfUrl) {
+  async summarizePaper(pdfUrl, title = "", abstract = "") {
     try {
       if (!pdfUrl) {
         throw new APIError('pdfUrl must be provided', 400);
@@ -1079,7 +1094,11 @@ export const googleScholarAPI = {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ pdf_url: pdfUrl }),
+        body: JSON.stringify({ 
+          pdf_url: pdfUrl,
+          title: title,
+          abstract: abstract 
+        }),
       });
 
       const data = await response.json();

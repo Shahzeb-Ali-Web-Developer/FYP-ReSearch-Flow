@@ -137,10 +137,14 @@ async def summarize_paper_endpoint(
 ):
     """
     Summarize a research paper from PMC.
+    Falls back to abstract-based summarization if PDF is unavailable.
     
     Request body:
         {
-            "pdf_url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC123456/pdf/"
+            "pdf_url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC123456/pdf/",
+            "pmc_id": "Optional PMC ID",
+            "title": "Optional paper title for fallback",
+            "abstract": "Optional abstract for fallback"
         }
     
     Returns:
@@ -149,11 +153,13 @@ async def summarize_paper_endpoint(
     try:
         pdf_url = request_data.get("pdf_url")
         pmc_id = request_data.get("pmc_id")  # Optional: direct PMC ID
+        title = request_data.get("title", "")
+        abstract = request_data.get("abstract", "")
         
-        if not pdf_url and not pmc_id:
+        if not pdf_url and not pmc_id and not abstract:
             raise HTTPException(
                 status_code=400,
-                detail="'pdf_url' or 'pmc_id' must be provided"
+                detail="'pdf_url', 'pmc_id', or 'abstract' must be provided"
             )
         
         # Try to extract PMC ID from URL if not provided directly
@@ -165,6 +171,7 @@ async def summarize_paper_endpoint(
         
         pdf_text = None
         extraction_error = None
+        fallback_used = False
         
         # Strategy 1: Try PMC XML full-text API (no PDF download needed, bypasses interstitial)
         if pmc_id:
@@ -179,6 +186,16 @@ async def summarize_paper_endpoint(
             logging.info(f"XML extraction failed/unavailable, trying PDF download: {pdf_url}")
             pdf_text, extraction_error = get_pdf_text_from_url(pdf_url, max_pages=None)
         
+        # Strategy 3: Fall back to abstract
+        if pdf_text is None and abstract and len(abstract.strip()) > 50:
+            logging.info(f"Using abstract-based fallback summarization for: {title[:80]}")
+            fallback_text = ""
+            if title:
+                fallback_text += f"Title: {title}\n\n"
+            fallback_text += f"Abstract: {abstract}"
+            pdf_text = fallback_text
+            fallback_used = True
+        
         if pdf_text is None:
             error_message = extraction_error or "PDF is not available or could not be processed."
             raise HTTPException(
@@ -190,16 +207,22 @@ async def summarize_paper_endpoint(
             )
         
         # Generate summary using LLM (passes extracted content to LLM)
-        logging.info(f"Generating summary for {len(pdf_text)} characters of text using LLM")
+        logging.info(f"Generating summary for {len(pdf_text)} characters of text using LLM (fallback={fallback_used})")
         summary = summarize_paper(pdf_text, max_sentences=5, use_llm=True)
         
-        return {
+        response = {
             "status": "success",
             "pdf_url": pdf_url,
             "summary": summary,
-            "full_text": pdf_text,  # Include full extracted text
+            "full_text": pdf_text if not fallback_used else None,
             "text_length": len(pdf_text)
         }
+        
+        if fallback_used:
+            response["fallback"] = True
+            response["fallback_note"] = "Summary was generated from the paper's abstract because the full text could not be accessed directly."
+            
+        return response
         
     except HTTPException:
         raise
