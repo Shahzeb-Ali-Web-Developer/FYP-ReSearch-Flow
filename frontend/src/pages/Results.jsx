@@ -107,6 +107,8 @@ const StatsPanel = ({
   setSelectedTopics,
   selectedTypes,
   setSelectedTypes,
+  selectedSources,
+  setSelectedSources,
   selectedInstitutions,
   setSelectedInstitutions,
   openAccessOnly,
@@ -120,11 +122,12 @@ const StatsPanel = ({
     relatedSearches: true,
     topic: false,
     institution: true,
-    type: true
+    type: true,
+    source: true
   });
 
   // Memoize stats calculations - only recalculate when papers change
-  const { openAccessCount, openAccessPercent, sortedYears, maxYearCount, yearDistribution, sortedTopics, sortedInstitutions, sortedTypes } = useMemo(() => {
+  const { openAccessCount, openAccessPercent, sortedYears, maxYearCount, yearDistribution, sortedTopics, sortedInstitutions, sortedTypes, sortedSources } = useMemo(() => {
     // Calculate stats from papers
     const openAccessCount = papers.filter(p => p.isOpenAccess).length;
     const openAccessPercent = papers.length > 0 ? Math.round((openAccessCount / papers.length) * 100) : 0;
@@ -179,6 +182,19 @@ const StatsPanel = ({
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10);
 
+    // Group by source (arXiv, OpenAlex, PMC, CORE, etc.)
+    const sourceCounts = {};
+    papers.forEach(p => {
+      const sources = p.allSources || [p.source || 'Unknown'];
+      sources.forEach(src => {
+        if (src && src.trim()) {
+          sourceCounts[src] = (sourceCounts[src] || 0) + 1;
+        }
+      });
+    });
+    const sortedSources = Object.entries(sourceCounts)
+      .sort((a, b) => b[1] - a[1]);
+
     return {
       openAccessCount,
       openAccessPercent,
@@ -187,7 +203,8 @@ const StatsPanel = ({
       yearDistribution,
       sortedTopics,
       sortedInstitutions,
-      sortedTypes
+      sortedTypes,
+      sortedSources
     };
   }, [papers]);
 
@@ -344,6 +361,52 @@ const StatsPanel = ({
             </div>
           )}
         </div>
+
+        {/* Source */}
+        <div className="border-b border-gray-200 pb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-gray-600" />
+              <span className="text-sm font-medium text-black">Source</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button className="p-1 hover:bg-gray-100 rounded">
+                <MoreVertical className="w-4 h-4 text-gray-600" />
+              </button>
+              <button onClick={() => toggleSection('source')}>
+                <X className="w-4 h-4 text-gray-600" />
+              </button>
+            </div>
+          </div>
+          {expandedSections.source && (
+            <div className="space-y-1">
+              {sortedSources.length > 0 ? (
+                <>
+                  {sortedSources.map(([source, count]) => (
+                    <label key={source} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
+                      <input
+                        type="checkbox"
+                        checked={selectedSources.includes(source)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedSources([...selectedSources, source]);
+                          } else {
+                            setSelectedSources(selectedSources.filter(s => s !== source));
+                          }
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                      <span className="text-sm text-gray-700 flex-1">{source}</span>
+                      <span className="text-sm text-gray-500">{count.toLocaleString()}</span>
+                    </label>
+                  ))}
+                </>
+              ) : (
+                <p className="text-sm text-gray-500 py-2">No source data available</p>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -401,12 +464,12 @@ const DetailPanel = ({ paper, onClose, summaryJobs, onStartSummarize }) => {
   const abstractPreview = abstract && abstract.length > 300 ? abstract.substring(0, 300) + '...' : abstract;
 
   // Derive summary state from the shared summaryJobs map
-  const paperId = paper.paperId || paper.id || paper.core_id || paper.pmc_id || paper.semantic_scholar_id || paper.google_scholar_id;
+  const paperId = paper.paperId || paper.id || paper.arxiv_id || paper.core_id || paper.pmc_id || paper.semantic_scholar_id || paper.google_scholar_id;
   const currentJob = summaryJobs?.get(paperId);
   const summarizing = currentJob?.status === 'loading';
   const summary = currentJob?.status === 'done' ? currentJob.summary : null;
 
-  const paperIdForSaved = paper.paperId || paper.id || paper.core_id || paper.pmc_id || paper.semantic_scholar_id || paper.google_scholar_id;
+  const paperIdForSaved = paper.paperId || paper.id || paper.arxiv_id || paper.core_id || paper.pmc_id || paper.semantic_scholar_id || paper.google_scholar_id;
   const isArxiv = paper.source === 'arXiv' || paper.arxiv_id;
   const isCore = paper.source === 'CORE' || paper.core_id;
   const isPmc = paper.source === 'PMC' || paper.pmc_id;
@@ -1594,6 +1657,7 @@ export default function Results() {
   const [selectedTopics, setSelectedTopics] = useState([]);
   const [selectedTypes, setSelectedTypes] = useState([]);
   const [selectedInstitutions, setSelectedInstitutions] = useState([]);
+  const [selectedSources, setSelectedSources] = useState([]);
   const [openAccessOnly, setOpenAccessOnly] = useState(false);
   const [fullContentOnly, setFullContentOnly] = useState(false);
   const [fromCache, setFromCache] = useState(false);
@@ -1609,7 +1673,7 @@ export default function Results() {
    * so closing the panel does NOT cancel the operation.
    */
   const startBackgroundSummarize = useCallback(async (paper) => {
-    const id = paper.paperId || paper.id || paper.core_id || paper.pmc_id || paper.semantic_scholar_id || paper.google_scholar_id;
+    const id = paper.paperId || paper.id || paper.arxiv_id || paper.core_id || paper.pmc_id || paper.semantic_scholar_id || paper.google_scholar_id;
     if (!id) return;
 
     // Don't start if already loading or done
@@ -2139,6 +2203,13 @@ export default function Results() {
       );
     }
 
+    if (selectedSources.length > 0) {
+      filtered = filtered.filter(p => {
+        const paperSources = p.allSources || [p.source || 'Unknown'];
+        return paperSources.some(src => selectedSources.includes(src));
+      });
+    }
+
     if (openAccessOnly) {
       filtered = filtered.filter(p => p.isOpenAccess === true);
     }
@@ -2152,7 +2223,7 @@ export default function Results() {
 
     // If no active filters at all, show all papers
     const hasStatsFilters =
-      openAccessOnly || fullContentOnly || selectedYears.length > 0 || selectedTopics.length > 0 || selectedTypes.length > 0 || selectedInstitutions.length > 0;
+      openAccessOnly || fullContentOnly || selectedYears.length > 0 || selectedTopics.length > 0 || selectedTypes.length > 0 || selectedInstitutions.length > 0 || selectedSources.length > 0;
     console.log('Filter result:', {
       hasActiveFilters,
       hasStatsFilters,
@@ -2173,7 +2244,7 @@ export default function Results() {
     const sortedResult = sortPapers(result, sortOption);
     setPapers(sortedResult);
     setCurrentPage(1); // Reset to first page when filters change
-  }, [allPapers, filters, selectedYears, selectedTopics, selectedTypes, selectedInstitutions, openAccessOnly, fullContentOnly, sortOption, sortPapers]);
+  }, [allPapers, filters, selectedYears, selectedTopics, selectedTypes, selectedInstitutions, selectedSources, openAccessOnly, fullContentOnly, sortOption, sortPapers]);
 
   useEffect(() => {
     if (!topic) {
@@ -2209,7 +2280,7 @@ export default function Results() {
       // If no papers, ensure papers state is empty
       setPapers([]);
     }
-  }, [filters, selectedYears, selectedTopics, selectedTypes, selectedInstitutions, openAccessOnly, allPapers, applyFilters]);
+  }, [filters, selectedYears, selectedTopics, selectedTypes, selectedInstitutions, selectedSources, openAccessOnly, allPapers, applyFilters]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -2785,6 +2856,8 @@ export default function Results() {
             setSelectedTopics={setSelectedTopics}
             selectedTypes={selectedTypes}
             setSelectedTypes={setSelectedTypes}
+            selectedSources={selectedSources}
+            setSelectedSources={setSelectedSources}
             selectedInstitutions={selectedInstitutions}
             setSelectedInstitutions={setSelectedInstitutions}
             openAccessOnly={openAccessOnly}
