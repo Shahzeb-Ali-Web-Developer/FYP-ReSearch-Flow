@@ -154,6 +154,7 @@ async def summarize_paper_endpoint(
         pdf_url = request_data.get("pdf_url")
         title = request_data.get("title", "")
         abstract = request_data.get("abstract", "")
+        pdf_text_direct = request_data.get("pdf_text")  # Optional: skip extraction
         
         if not pdf_url and not abstract:
             raise HTTPException(
@@ -163,9 +164,14 @@ async def summarize_paper_endpoint(
         
         pdf_text = None
         fallback_used = False
+
+        # --- OPTIMIZATION: Use pre-extracted text if provided ---
+        if pdf_text_direct and len(str(pdf_text_direct).strip()) > 100:
+            pdf_text = str(pdf_text_direct)
+            logging.info(f"Using pre-extracted PDF text ({len(pdf_text)} chars) — skipping PDF download")
         
         # Try PDF extraction first
-        if pdf_url:
+        if pdf_text is None and pdf_url:
             logging.info(f"Summarizing paper from: {pdf_url}")
             pdf_text, extraction_error = get_pdf_text_from_url(pdf_url, max_pages=None)
             
@@ -236,6 +242,7 @@ async def ask_question_endpoint(
         question = request_data.get("question")
         pdf_text_direct = request_data.get("pdf_text")  # Optional: skip extraction
         conversation_history = request_data.get("conversation_history", [])
+        paper_title = request_data.get("paper_title", "")
         
         if not question or not question.strip():
             raise HTTPException(status_code=400, detail="Question is required")
@@ -265,7 +272,9 @@ async def ask_question_endpoint(
         answer = ask_about_paper(
             question.strip(),
             pdf_text,
-            conversation_history=conversation_history if conversation_history else None
+            conversation_history=conversation_history if conversation_history else None,
+            paper_title=paper_title or None,
+            paper_source="CORE",
         )
         
         if not answer:

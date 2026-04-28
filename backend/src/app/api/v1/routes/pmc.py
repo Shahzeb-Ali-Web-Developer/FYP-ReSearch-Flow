@@ -155,6 +155,7 @@ async def summarize_paper_endpoint(
         pmc_id = request_data.get("pmc_id")  # Optional: direct PMC ID
         title = request_data.get("title", "")
         abstract = request_data.get("abstract", "")
+        pdf_text_direct = request_data.get("pdf_text")  # Optional: skip extraction
         
         if not pdf_url and not pmc_id and not abstract:
             raise HTTPException(
@@ -172,9 +173,14 @@ async def summarize_paper_endpoint(
         pdf_text = None
         extraction_error = None
         fallback_used = False
+
+        # --- OPTIMIZATION: Use pre-extracted text if provided ---
+        if pdf_text_direct and len(str(pdf_text_direct).strip()) > 100:
+            pdf_text = str(pdf_text_direct)
+            logging.info(f"Using pre-extracted PDF text ({len(pdf_text)} chars) — skipping PDF/XML download")
         
         # Strategy 1: Try PMC XML full-text API (no PDF download needed, bypasses interstitial)
-        if pmc_id:
+        if pdf_text is None and pmc_id:
             logging.info(f"Trying PMC XML full-text extraction for PMC{pmc_id}")
             xml_text = get_pmc_fulltext_from_xml(pmc_id)
             if xml_text and len(xml_text.strip()) > 200:
@@ -250,6 +256,7 @@ async def ask_question_endpoint(
         question = request_data.get("question")
         pdf_text_direct = request_data.get("pdf_text")  # Optional: skip extraction
         conversation_history = request_data.get("conversation_history", [])
+        paper_title = request_data.get("paper_title", "")
         
         if not question or not question.strip():
             raise HTTPException(status_code=400, detail="Question is required")
@@ -299,7 +306,9 @@ async def ask_question_endpoint(
         answer = ask_about_paper(
             question.strip(),
             pdf_text,
-            conversation_history=conversation_history if conversation_history else None
+            conversation_history=conversation_history if conversation_history else None,
+            paper_title=paper_title or None,
+            paper_source="PMC",
         )
         
         if not answer:

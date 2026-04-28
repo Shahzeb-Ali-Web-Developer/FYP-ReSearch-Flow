@@ -443,6 +443,8 @@ const DetailPanel = ({ paper, onClose, summaryJobs, onStartSummarize }) => {
   const [pdfContent, setPdfContent] = useState(null);
   // Summary state is now derived from the parent's summaryJobs map
   // so it persists even when the panel is closed/reopened
+  const [preparingSummaryChat, setPreparingSummaryChat] = useState(false);
+  const [showSummaryChatMenu, setShowSummaryChatMenu] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
@@ -488,6 +490,8 @@ const DetailPanel = ({ paper, onClose, summaryJobs, onStartSummarize }) => {
   // the parent's summaryJobs map, so background jobs survive panel changes.
   useEffect(() => {
     setPdfContent(null);
+    setPreparingSummaryChat(false);
+    setShowSummaryChatMenu(false);
     setShowChat(false);
     setChatMessages([]);
     setChatInput('');
@@ -691,9 +695,60 @@ const DetailPanel = ({ paper, onClose, summaryJobs, onStartSummarize }) => {
       return;
     }
 
-    // Delegate to the parent's background summarizer
-    onStartSummarize(paper);
+    // Delegate to the parent's background summarizer (pass pre-extracted content if available)
+    onStartSummarize(paper, pdfContent);
     showToast('Summarization started — you can browse other papers while it processes', 'info');
+  };
+
+  const ensurePaperContentExtracted = async () => {
+    if (pdfContent && String(pdfContent).trim().length > 100) return String(pdfContent);
+
+    if (pdfUrlForExtract) {
+      try {
+        let extractResponse;
+        if (isArxiv) extractResponse = await arxivAPI.extractPdfContent(arxivId || null, pdfUrlForExtract || null);
+        else if (isCore) extractResponse = await coreAPI.extractPdfContent(pdfUrlForExtract);
+        else if (isPmc) extractResponse = await pmcAPI.extractPdfContent(pdfUrlForExtract);
+        else if (isGoogleScholar) extractResponse = await googleScholarAPI.extractPdfContent(pdfUrlForExtract);
+        else extractResponse = await semanticScholarAPI.extractPdfContent(pdfUrlForExtract);
+
+        if (extractResponse?.status === 'success' && extractResponse.full_text) {
+          setPdfContent(extractResponse.full_text);
+          return extractResponse.full_text;
+        }
+      } catch (extractErr) {
+        console.warn('PDF extraction failed, will try with abstract fallback:', extractErr?.message);
+      }
+    }
+
+    if (abstract && abstract.trim().length > 50) {
+      setPdfContent(abstract);
+      return abstract;
+    }
+
+    return null;
+  };
+
+  const handleOpenSummaryChat = async () => {
+    if (preparingSummaryChat) return;
+
+    if (pdfContent && String(pdfContent).trim().length > 100) {
+      setShowSummaryChatMenu(prev => !prev);
+      return;
+    }
+
+    setPreparingSummaryChat(true);
+    showToast('Extracting paper text...', 'info');
+    try {
+      const text = await ensurePaperContentExtracted();
+      if (!text) {
+        showToast('No paper text available (PDF/abstract missing)', 'error');
+        return;
+      }
+      setShowSummaryChatMenu(true);
+    } finally {
+      setPreparingSummaryChat(false);
+    }
   };
 
   // Handle chat question
@@ -716,27 +771,8 @@ const DetailPanel = ({ paper, onClose, summaryJobs, onStartSummarize }) => {
         content: msg.content
       }));
 
-      // If we don't have pdfContent yet (no prior summarization), extract it first
-      let currentPdfContent = pdfContent;
-      if (!currentPdfContent && pdfUrlForExtract) {
-        showToast('Extracting paper content for the first time...', 'info');
-        try {
-          const extractResponse = await semanticScholarAPI.extractPdfContent(pdfUrlForExtract);
-          if (extractResponse.status === 'success' && extractResponse.full_text) {
-            currentPdfContent = extractResponse.full_text;
-            setPdfContent(currentPdfContent);
-          }
-        } catch (extractErr) {
-          console.warn('PDF extraction failed, will try with abstract fallback:', extractErr.message);
-          // If abstract is available, use it as fallback content
-          if (abstract) {
-            currentPdfContent = abstract;
-          }
-        }
-      } else if (!currentPdfContent && abstract) {
-        // No PDF, but have abstract — use it as the paper content
-        currentPdfContent = abstract;
-      }
+      // Ensure paper text is extracted once before chatting
+      const currentPdfContent = await ensurePaperContentExtracted();
 
       if (!currentPdfContent && !pdfUrlForExtract) {
         showToast('No paper content available to answer questions about', 'error');
@@ -894,8 +930,66 @@ const DetailPanel = ({ paper, onClose, summaryJobs, onStartSummarize }) => {
             Notes
           </button>
         )}
-        {/* Show summarize button if: PDF available OR (Semantic Scholar/Google Scholar paper with abstract) */}
-        {(pdfUrlForExtract || (isSemanticScholar && abstract) || (isGoogleScholar && abstract)) && (
+        {/* Summary/Chat single entrypoint */}
+        {(pdfUrlForExtract || abstract) && (
+          <div className="relative">
+            <button
+              onClick={handleOpenSummaryChat}
+              disabled={preparingSummaryChat}
+              className={`px-4 py-2 rounded text-sm flex items-center gap-2 transition-colors ${showSummaryChatMenu
+                ? 'bg-gray-100 hover:bg-gray-200 text-black border border-gray-300'
+                : 'bg-black hover:bg-gray-800 text-white'
+                } disabled:opacity-60 disabled:cursor-not-allowed`}
+              title="Extract text, then choose Summarize or Ask"
+            >
+              {preparingSummaryChat ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
+                  <span>Preparing...</span>
+                </>
+              ) : (
+                <>
+                  <MessageSquare className="w-4 h-4" />
+                  <span>Summary/Chat</span>
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showSummaryChatMenu ? 'rotate-180' : ''}`} />
+                </>
+              )}
+            </button>
+
+            {showSummaryChatMenu && (
+              <div className="absolute left-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+                <button
+                  onClick={() => {
+                    setShowSummaryChatMenu(false);
+                    handleSummarize();
+                  }}
+                  disabled={summarizing || summary}
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                  title={summary ? 'Summary already generated' : 'Generate AI summary'}
+                >
+                  {summary ? <CheckCircle className="w-4 h-4" /> : <MessageSquare className="w-4 h-4" />}
+                  <span>{summary ? 'Summarized' : 'Summarize'}</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setShowSummaryChatMenu(false);
+                    setShowChat(true);
+                    setTimeout(() => {
+                      chatRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 100);
+                  }}
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700"
+                  title="Ask questions about this paper"
+                >
+                  <Bot className="w-4 h-4" />
+                  <span>Ask about this paper</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {false && (pdfUrlForExtract || (isSemanticScholar && abstract) || (isGoogleScholar && abstract)) && (
           <>
             <button
               onClick={handleSummarize}
@@ -946,6 +1040,65 @@ const DetailPanel = ({ paper, onClose, summaryJobs, onStartSummarize }) => {
                 <span>Ask about this paper</span>
               </button>
             )}
+            {/* Summary/Chat single entrypoint */}
+            {(pdfUrlForExtract || abstract) && (
+              <div className="relative">
+                <button
+                  onClick={handleOpenSummaryChat}
+                  disabled={preparingSummaryChat}
+                  className={`px-4 py-2 rounded text-sm flex items-center gap-2 transition-colors ${showSummaryChatMenu
+                    ? 'bg-gray-100 hover:bg-gray-200 text-black border border-gray-300'
+                    : 'bg-black hover:bg-gray-800 text-white'
+                    } disabled:opacity-60 disabled:cursor-not-allowed`}
+                  title="Extract text, then choose Summarize or Ask"
+                >
+                  {preparingSummaryChat ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
+                      <span>Preparing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <MessageSquare className="w-4 h-4" />
+                      <span>Summary/Chat</span>
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showSummaryChatMenu ? 'rotate-180' : ''}`} />
+                    </>
+                  )}
+                </button>
+
+                {showSummaryChatMenu && (
+                  <div className="absolute left-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+                    <button
+                      onClick={() => {
+                        setShowSummaryChatMenu(false);
+                        handleSummarize();
+                      }}
+                      disabled={summarizing || summary}
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                      title={summary ? 'Summary already generated' : 'Generate AI summary'}
+                    >
+                      {summary ? <CheckCircle className="w-4 h-4" /> : <MessageSquare className="w-4 h-4" />}
+                      <span>{summary ? 'Summarized' : 'Summarize'}</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowSummaryChatMenu(false);
+                        setShowChat(true);
+                        setTimeout(() => {
+                          chatRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }, 100);
+                      }}
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700"
+                      title="Ask questions about this paper"
+                    >
+                      <Bot className="w-4 h-4" />
+                      <span>Ask about this paper</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Generate Draft button — only for papers with open-access PDF */}
             {pdfUrlForExtract && (
               <button
@@ -1672,7 +1825,7 @@ export default function Results() {
    * The API call runs independently of the DetailPanel lifecycle,
    * so closing the panel does NOT cancel the operation.
    */
-  const startBackgroundSummarize = useCallback(async (paper) => {
+  const startBackgroundSummarize = useCallback(async (paper, pdfText = null) => {
     const id = paper.paperId || paper.id || paper.arxiv_id || paper.core_id || paper.pmc_id || paper.semantic_scholar_id || paper.google_scholar_id;
     if (!id) return;
 
@@ -1710,17 +1863,17 @@ export default function Results() {
     try {
       let response;
       if (isArxiv) {
-        response = await arxivAPI.summarizePaper(arxivId || null, pdfUrl || null, title, abstract);
+        response = await arxivAPI.summarizePaper(arxivId || null, pdfUrl || null, title, abstract, pdfText);
       } else if (isCore) {
-        response = await coreAPI.summarizePaper(pdfUrl, title, abstract);
+        response = await coreAPI.summarizePaper(pdfUrl, title, abstract, pdfText);
       } else if (isPmc) {
-        response = await pmcAPI.summarizePaper(pdfUrl, pmcId, title, abstract);
+        response = await pmcAPI.summarizePaper(pdfUrl, pmcId, title, abstract, pdfText);
       } else if (isSemanticScholar) {
-        response = await semanticScholarAPI.summarizePaper(pdfUrl, title, abstract);
+        response = await semanticScholarAPI.summarizePaper(pdfUrl, title, abstract, pdfText);
       } else if (isGoogleScholar) {
-        response = await googleScholarAPI.summarizePaper(pdfUrl, title, abstract);
+        response = await googleScholarAPI.summarizePaper(pdfUrl, title, abstract, pdfText);
       } else {
-        response = await semanticScholarAPI.summarizePaper(pdfUrl, title, abstract);
+        response = await semanticScholarAPI.summarizePaper(pdfUrl, title, abstract, pdfText);
       }
 
       if (response.status === 'success' && response.summary) {
