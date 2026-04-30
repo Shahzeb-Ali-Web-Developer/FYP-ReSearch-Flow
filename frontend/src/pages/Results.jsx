@@ -1781,6 +1781,7 @@ export default function Results() {
   const [allPapers, setAllPapers] = useState([]); // All fetched papers
   const [papers, setPapers] = useState([]); // Filtered papers
   const [loading, setLoading] = useState(true);
+  const [fetchProgress, setFetchProgress] = useState(0); // 0-100 for YouTube-style progress bar
   const [error, setError] = useState(null);
   const [stats, setStats] = useState(null);
   const [selectedPaper, setSelectedPaper] = useState(null);
@@ -2117,6 +2118,7 @@ export default function Results() {
     setError(null);
     setSelectedPaper(null);
     setFromCache(false);
+    setFetchProgress(5); // Start at 5% to show something instantly
 
     try {
       // === OPTIMIZATION: Start cache check AND all API calls simultaneously ===
@@ -2164,6 +2166,8 @@ export default function Results() {
       // Process each API result as it arrives
       const processResult = (name, result) => {
         completedCount++;
+        // Each of 6 sources contributes ~15.8%, starting from 5%
+        setFetchProgress(Math.min(5 + Math.round((completedCount / apiCalls.length) * 90), 95));
         console.log(`[${completedCount}/6] ${name} completed:`, {
           status: result?.status,
           paperCount: result?.papers?.length || 0,
@@ -2240,6 +2244,9 @@ export default function Results() {
       }
     } finally {
       setLoading(false);
+      // Animate to 100% then fade out
+      setFetchProgress(100);
+      setTimeout(() => setFetchProgress(0), 600);
     }
   };
 
@@ -2668,6 +2675,15 @@ export default function Results() {
 
   return (
     <div className="min-h-screen bg-white">
+      {/* YouTube-style top progress bar */}
+      {fetchProgress > 0 && (
+        <div className="fixed top-0 left-0 right-0 z-[9999] h-[3px] bg-transparent">
+          <div
+            className="h-full bg-black transition-all duration-300 ease-out"
+            style={{ width: `${fetchProgress}%`, boxShadow: '0 0 8px rgba(0,0,0,0.4)' }}
+          />
+        </div>
+      )}
       {/* Query Builder / Filter Area */}
       <div className="border-b border-gray-200 bg-white">
         <div className="max-w-7xl mx-auto px-4 py-4">
