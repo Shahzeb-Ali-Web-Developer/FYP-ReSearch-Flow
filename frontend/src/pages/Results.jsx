@@ -413,7 +413,7 @@ const StatsPanel = ({
 };
 
 // Detailed slide-in panel (right column)
-const DetailPanel = ({ paper, onClose, summaryJobs, onStartSummarize }) => {
+const DetailPanel = ({ paper, onClose, summaryJobs, onStartSummarize, isSplitScreen }) => {
   if (!paper) return null;
 
   const { user, isAuthenticated } = useAuth();
@@ -814,7 +814,11 @@ const DetailPanel = ({ paper, onClose, summaryJobs, onStartSummarize }) => {
   };
 
   return (
-    <div className="fixed inset-y-0 right-0 w-full md:w-[600px] bg-white border-l border-gray-200 z-50 overflow-y-auto shadow-2xl">
+    <div className={`fixed bg-white z-50 overflow-y-auto shadow-2xl transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] transform ${paper ? 'translate-x-0' : 'translate-x-full'} ${
+      isSplitScreen
+        ? 'top-4 bottom-4 right-4 w-[calc(50%-1rem)] rounded-2xl border border-gray-200'
+        : 'top-0 bottom-0 right-0 w-full md:w-[600px] border-l border-gray-200'
+    }`}>
       {/* Header */}
       <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-start justify-between">
         <div className="flex-1 pr-4">
@@ -1782,6 +1786,7 @@ export default function Results() {
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [showStatsPanel, setShowStatsPanel] = useState(true);
   const [showCitationMesh, setShowCitationMesh] = useState(false);
+  const citationNetworkCache = React.useRef(null); // Persists network data across open/close
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
 
@@ -1887,7 +1892,7 @@ export default function Results() {
           });
           return next;
         });
-        
+
         if (response.fallback) {
           showResultToast(`Summary (from abstract): "${(paper.title || 'Paper').substring(0, 40)}…"`, 'warning', 6000);
         } else {
@@ -2414,6 +2419,7 @@ export default function Results() {
     }
 
     setSearchQuery(topic);
+    citationNetworkCache.current = null; // Clear citation cache for new topic
 
     // Record search in history for autocomplete suggestions
     recordSearch(topic);
@@ -2802,20 +2808,17 @@ export default function Results() {
                     >
                       {/* Sliding knob */}
                       <div
-                        className={`absolute top-[2px] h-[28px] w-[98px] rounded-full bg-black shadow-md transition-all duration-300 ease-in-out ${
-                          fullContentOnly ? 'left-[100px]' : 'left-[2px]'
-                        }`}
+                        className={`absolute top-[2px] h-[28px] w-[98px] rounded-full bg-black shadow-md transition-all duration-300 ease-in-out ${fullContentOnly ? 'left-[100px]' : 'left-[2px]'
+                          }`}
                       />
                       {/* Left label */}
-                      <span className={`relative z-10 flex-1 text-center text-xs font-semibold transition-colors duration-300 ${
-                        !fullContentOnly ? 'text-white' : 'text-gray-500'
-                      }`}>
+                      <span className={`relative z-10 flex-1 text-center text-xs font-semibold transition-colors duration-300 ${!fullContentOnly ? 'text-white' : 'text-gray-500'
+                        }`}>
                         All Results
                       </span>
                       {/* Right label */}
-                      <span className={`relative z-10 flex-1 text-center text-xs font-semibold transition-colors duration-300 ${
-                        fullContentOnly ? 'text-white' : 'text-gray-500'
-                      }`}>
+                      <span className={`relative z-10 flex-1 text-center text-xs font-semibold transition-colors duration-300 ${fullContentOnly ? 'text-white' : 'text-gray-500'
+                        }`}>
                         Full Access
                       </span>
                     </div>
@@ -3038,6 +3041,7 @@ export default function Results() {
               onClose={() => setSelectedPaper(null)}
               summaryJobs={summaryJobs}
               onStartSummarize={startBackgroundSummarize}
+              isSplitScreen={showCitationMesh && !!selectedPaper}
             />
             <div
               className="fixed inset-0 bg-black/30 z-40 md:hidden"
@@ -3050,7 +3054,10 @@ export default function Results() {
         {showCitationMesh && (
           <CitationMesh
             papers={allPapers}
+            cachedNetwork={citationNetworkCache.current}
+            onNetworkBuilt={(data) => { citationNetworkCache.current = data; }}
             onClose={() => setShowCitationMesh(false)}
+            isSplitScreen={showCitationMesh && !!selectedPaper}
             onNodeClick={(nodeData) => {
               // Find the paper in allPapers and show its details
               const paper = allPapers.find(p =>
@@ -3058,7 +3065,6 @@ export default function Results() {
               );
               if (paper) {
                 setSelectedPaper(paper);
-                setShowCitationMesh(false);
               }
             }}
           />

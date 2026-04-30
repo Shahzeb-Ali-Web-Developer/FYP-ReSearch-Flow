@@ -109,7 +109,7 @@ export const searchAPI = {
    * @param {number} maxNodes - Maximum number of nodes (default: 50)
    * @returns {Promise<Object>} Citation network with nodes and edges
    */
-  async getCitationNetwork(papers, maxDepth = 1, maxNodes = 50) {
+  async getCitationNetwork(papers, maxDepth = 2, maxNodes = 80) {
     try {
       const response = await fetch(`${API_BASE_URL}/citation/network`, {
         method: 'POST',

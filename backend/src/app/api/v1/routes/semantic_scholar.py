@@ -7,7 +7,6 @@ import logging
 from ....services.semantic_scholar_service import fetch_semantic_scholar_papers
 from ....services.pdf_service import get_pdf_text_from_url
 from ....services.summarization_service import summarize_paper
-from ....services.chat_service import ask_about_paper
 
 router = APIRouter()
 
@@ -229,97 +228,3 @@ async def summarize_paper_endpoint(
                 "message": str(e)
             }
         )
-
-
-@router.post("/ask")
-async def ask_question_endpoint(
-    request_data: dict = Body(...)
-):
-    """
-    Ask a question about a research paper from any source.
-    Works with any PDF URL regardless of original source.
-    
-    Request body:
-        {
-            "pdf_url": "https://example.com/paper.pdf",
-            "question": "What is the main contribution of this paper?",
-            "pdf_text": "...(optional pre-extracted text)...",  # Skip PDF download if provided
-            "conversation_history": [  # Optional
-                {"role": "user", "content": "previous question"},
-                {"role": "assistant", "content": "previous answer"}
-            ]
-        }
-    
-    Returns:
-        Answer to the question
-    """
-    try:
-        pdf_url = request_data.get("pdf_url")
-        question = request_data.get("question")
-        pdf_text_direct = request_data.get("pdf_text")  # Optional: pre-extracted text from frontend
-        conversation_history = request_data.get("conversation_history", [])
-        paper_title = request_data.get("paper_title", "")
-        
-        if not question or not question.strip():
-            raise HTTPException(
-                status_code=400,
-                detail="Question is required"
-            )
-        
-        logging.info(f"Question: {question[:100]}...")
-        
-        # --- OPTIMIZATION: Use pre-extracted text if provided by frontend ---
-        # This avoids re-downloading and re-extracting the PDF on every question.
-        if pdf_text_direct and len(pdf_text_direct.strip()) > 100:
-            pdf_text = pdf_text_direct
-            logging.info(f"Using pre-extracted PDF text ({len(pdf_text)} chars) — skipping PDF download")
-        else:
-            # Fall back to downloading and extracting from URL
-            if not pdf_url:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Either 'pdf_url' or 'pdf_text' must be provided"
-                )
-            
-            logging.info(f"Extracting PDF from URL: {pdf_url}")
-            pdf_text, extraction_error = get_pdf_text_from_url(pdf_url, max_pages=None)
-            
-            if pdf_text is None:
-                error_message = extraction_error or "PDF is not available or could not be processed."
-                raise HTTPException(
-                    status_code=404,
-                    detail={
-                        "error": "PDF not available",
-                        "message": error_message
-                    }
-                )
-        
-        # Get answer from LLM
-        answer = ask_about_paper(
-            question.strip(),
-            pdf_text,
-            conversation_history=conversation_history if conversation_history else None,
-            paper_title=paper_title or None,
-            paper_source="Semantic Scholar",
-        )
-        
-        return {
-            "status": "success",
-            "pdf_url": pdf_url or "(text provided directly)",
-            "question": question,
-            "answer": answer
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error(f"Error answering question: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error": "Failed to answer question",
-                "message": str(e)
-            }
-        )
-
-

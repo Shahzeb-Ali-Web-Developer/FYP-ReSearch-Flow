@@ -42,7 +42,7 @@ const loadCytoscape = async () => {
   return cytoscapePromise;
 };
 
-const CitationMesh = ({ papers, onClose, onNodeClick }) => {
+const CitationMesh = ({ papers, onClose, onNodeClick, cachedNetwork, onNetworkBuilt, isSplitScreen }) => {
   const [elements, setElements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -66,6 +66,14 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
 
       if (!papers || papers.length === 0) {
         setError('No papers available to build citation network');
+        setLoading(false);
+        return;
+      }
+
+      // Use cached network data if available (instant reopen)
+      if (cachedNetwork && cachedNetwork.elements && cachedNetwork.elements.length > 0) {
+        console.log('Using cached citation network:', cachedNetwork.elements.length, 'elements');
+        setElements(cachedNetwork.elements);
         setLoading(false);
         return;
       }
@@ -100,7 +108,14 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
         cyRef.current = null;
       }
     };
-  }, [elements, layout, showLabels]);
+  }, [elements]);
+
+  // Update stylesheet dynamically without destroying graph
+  useEffect(() => {
+    if (cyRef.current) {
+      cyRef.current.style(getStylesheet());
+    }
+  }, [showLabels]);
 
   const initializeCytoscape = (cyLib) => {
     if (!cyLib || !containerRef.current) {
@@ -137,11 +152,13 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
           y: position.y - 60,
           content: {
             title: nodeData.title,
+            nodeIndex: nodeData.nodeIndex || 0,
             year: nodeData.year || 'N/A',
             citations: nodeData.citationCount || 0,
             authors: authors,
             venue: nodeData.venue || 'N/A',
             isRoot: nodeData.isRoot,
+            isBridge: nodeData.isBridge,
             influenceScore: nodeData.influenceScore || 0,
             pageRankScore: nodeData.pageRankScore || 0,
             citationVelocity: nodeData.citationVelocity || 0
@@ -159,7 +176,7 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
         node.style('z-index', 'auto');
       });
 
-      cy.on('tap', 'node', handleNodeClick);
+      cy.on('tap click', 'node', handleNodeClick);
       
       // Pan and zoom controls
       cy.boxSelectionEnabled(false);
@@ -202,7 +219,7 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
       const { searchAPI } = await import('../services/api');
       
       // Build citation network (optimized for speed and reliability)
-      const response = await searchAPI.getCitationNetwork(papers, 1, 50); // Balanced network building
+      const response = await searchAPI.getCitationNetwork(papers, 2, 80); // Bidirectional + bridge discovery
       
       if (response.status === 'success' && response.network) {
         let { nodes, edges } = response.network;
@@ -224,11 +241,19 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
         console.log('After filtering:', { nodes: nodes.length, edges: edges.length });
         
         // Convert to Cytoscape format with clean, minimal labels
-        const cyNodes = nodes.map((node) => {
+        const cyNodes = nodes.map((node, index) => {
           const title = node.title || node.label || 'Untitled';
+          const nodeIndex = index + 1;
+          
+          // Generate an SVG data URI to draw the number inside the bubble
+          // All node types are now dark-colored so white numbers work for all
+          const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">
+            <text x="50" y="50" dy=".35em" font-family="Inter, -apple-system, sans-serif" font-size="38" font-weight="700" fill="rgba(255,255,255,0.95)" text-anchor="middle">${nodeIndex}</text>
+          </svg>`;
+          const bgImage = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
           
           // Shorter truncation for cleaner look
-          const maxLength = node.isRoot ? 60 : 45;
+          const maxLength = node.isRoot ? 50 : 38;
           const truncatedTitle = title.length > maxLength 
             ? title.substring(0, maxLength) + '...' 
             : title;
@@ -236,18 +261,21 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
           return {
             data: {
               id: String(node.id),
-              label: truncatedTitle, // Clean, simple title only
+              label: `#${nodeIndex} ${truncatedTitle}`,
               title: title,
+              nodeIndex: nodeIndex,
               year: node.year,
               citationCount: node.citationCount || 0,
               authors: node.authors || [],
               venue: node.venue,
               isRoot: node.isRoot || false,
+              isBridge: node.isBridge || false,
               influenceScore: node.influenceScore || 0,
               pageRankScore: node.pageRankScore || 0,
               citationVelocity: node.citationVelocity || 0,
+              bgImage: bgImage,
             },
-            classes: node.isRoot ? 'root-node' : 'citation-node',
+            classes: node.isRoot ? 'root-node' : (node.isBridge ? 'bridge-node' : 'citation-node'),
           };
         });
 
@@ -258,6 +286,7 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
             target: String(edge.target), // Ensure string IDs
             type: edge.type || 'cites',
           },
+          classes: edge.type === 'cited_by' ? 'cited-by-edge' : 'cites-edge',
         }));
 
         console.log('Network built:', {
@@ -274,7 +303,13 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
           console.warn('No edges found! This might mean papers don\'t reference each other in the dataset.');
         }
 
-        setElements([...cyNodes, ...cyEdges]);
+        const allElements = [...cyNodes, ...cyEdges];
+        setElements(allElements);
+
+        // Cache the built network for instant reopen
+        if (onNetworkBuilt) {
+          onNetworkBuilt({ elements: allElements });
+        }
       } else {
         setError('Failed to build citation network');
       }
@@ -415,15 +450,45 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
       return {
         name: 'dagre',
         rankDir: 'TB',
-        spacingFactor: 2.5, // Increased spacing
-        nodeSep: 200, // More space between nodes
+        spacingFactor: 2.5,
+        nodeSep: 200,
         edgeSep: 80,
-        rankSep: 250, // More space between ranks
+        rankSep: 250,
         fit: true,
         padding: 80,
         animate: true,
         animationDuration: 600,
         animationEasing: 'ease-out',
+      };
+    }
+
+    // Timeline: position nodes by year on x-axis
+    if (layoutName === 'timeline') {
+      return {
+        name: 'preset',
+        fit: true,
+        padding: 80,
+        animate: true,
+        animationDuration: 600,
+        animationEasing: 'ease-out',
+        positions: (node) => {
+          const year = node.data('year');
+          const allNodes = node.cy().nodes();
+          const years = allNodes.map(n => n.data('year')).filter(y => y && typeof y === 'number');
+          const minYear = Math.min(...years) || 2000;
+          const maxYear = Math.max(...years) || 2025;
+          const range = Math.max(1, maxYear - minYear);
+
+          // X by year, Y staggered per same-year group
+          const x = year ? ((year - minYear) / range) * 1800 : 900;
+          // Spread same-year nodes vertically using index
+          const sameYearNodes = allNodes.filter(n => n.data('year') === year);
+          const idx = sameYearNodes.indexOf(node);
+          const ySpread = sameYearNodes.length > 1 ? (idx - sameYearNodes.length / 2) * 120 : 0;
+          const yBase = node.data('isRoot') ? 0 : (node.data('isBridge') ? -200 : 200);
+
+          return { x: x + 100, y: yBase + ySpread };
+        }
       };
     }
 
@@ -458,6 +523,11 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
         'text-background-padding': '4px 8px',
         'text-background-shape': 'roundrectangle',
         'background-opacity': 1,
+        'background-image': 'data(bgImage)',
+        'background-fit': 'contain',
+        'background-image-opacity': 1,
+        'overlay-padding': '12px',
+        'events': 'yes',
         'transition-property': 'background-color, border-color, border-width',
         'transition-duration': '0.2s',
       },
@@ -465,12 +535,12 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
     {
       selector: 'node.root-node',
       style: {
-        'background-color': 'mapData(pageRankScore, 0, 1, #93C5FD, #1E3A8A)',
+        'background-color': '#10B981',
         'label': labelValue,
         'width': 'mapData(influenceScore, 0, 1, 70, 110)',
         'height': 'mapData(influenceScore, 0, 1, 70, 110)',
         'border-width': 3,
-        'border-color': '#2563EB',
+        'border-color': '#047857',
         'font-weight': '600',
         'font-size': '12px',
         'color': '#1E293B',
@@ -483,15 +553,32 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
     {
       selector: 'node.citation-node',
       style: {
-        'background-color': 'mapData(pageRankScore, 0, 1, #E2E8F0, #475569)',
+        'background-color': '#3B82F6',
         'label': labelValue,
         'width': 'mapData(influenceScore, 0, 1, 45, 85)',
         'height': 'mapData(influenceScore, 0, 1, 45, 85)',
         'font-size': '10px',
         'font-weight': '500',
-        'border-color': '#94A3B8',
+        'border-color': '#1D4ED8',
         'border-width': 2,
-        'color': '#475569',
+        'color': '#1E293B',
+      },
+    },
+    {
+      selector: 'node.bridge-node',
+      style: {
+        'background-color': '#F59E0B',
+        'label': labelValue,
+        'width': 'mapData(influenceScore, 0, 1, 55, 95)',
+        'height': 'mapData(influenceScore, 0, 1, 55, 95)',
+        'font-size': '11px',
+        'font-weight': '600',
+        'border-color': '#D97706',
+        'border-width': 3,
+        'border-style': 'double',
+        'color': '#1E293B',
+        'shape': 'diamond',
+        'z-index': 80,
       },
     },
     {
@@ -507,6 +594,15 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
         'line-style': 'solid',
         'transition-property': 'line-color, width, opacity',
         'transition-duration': '0.2s',
+      },
+    },
+    {
+      selector: 'edge.cited-by-edge',
+      style: {
+        'line-color': '#A5B4FC',
+        'target-arrow-color': '#6366F1',
+        'line-style': 'dashed',
+        'opacity': 0.45,
       },
     },
     {
@@ -542,6 +638,7 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
   const layoutOptions = useMemo(() => {
     const options = {
       concentric: 'Concentric (Circular Clusters)',
+      timeline: 'Timeline (Chronological)',
       circle: 'Circle',
       cose: 'Force-Directed',
       breadthfirst: 'Breadthfirst',
@@ -563,8 +660,25 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
 
   // Cytoscape should always be available if imported correctly
 
+  // Handle resize events for graph when split screen / fullscreen changes
+  useEffect(() => {
+    if (cyRef.current) {
+      // Small timeout to allow CSS transitions to complete
+      setTimeout(() => {
+        cyRef.current.resize();
+        cyRef.current.fit(undefined, 80);
+      }, 550);
+    }
+  }, [isSplitScreen, isFullscreen]);
+
   return (
-    <div className={`fixed inset-0 bg-white z-50 ${isFullscreen ? '' : 'md:inset-y-4 md:inset-x-4 md:rounded-lg'} shadow-2xl flex flex-col`}>
+    <div className={`fixed bg-white z-50 shadow-2xl flex flex-col transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden ${
+      isFullscreen 
+        ? 'inset-0' 
+        : isSplitScreen
+          ? 'top-4 bottom-4 left-4 w-[calc(50%-1rem)] rounded-2xl border border-gray-200'
+          : 'top-4 bottom-4 left-4 right-4 rounded-2xl border border-gray-200'
+    }`}>
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white">
         <div className="flex items-center gap-4">
@@ -734,10 +848,17 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
               <div className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium mb-2 ${
                 tooltip.content.isRoot 
                   ? 'bg-blue-50 text-blue-700 border border-blue-200' 
-                  : 'bg-gray-50 text-gray-700 border border-gray-200'
+                  : tooltip.content.isBridge
+                    ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                    : 'bg-gray-50 text-gray-700 border border-gray-200'
               }`}>
-                {tooltip.content.isRoot ? 'Search Result' : 'Citation'}
+                {tooltip.content.isRoot ? 'Search Result' : tooltip.content.isBridge ? 'Bridge Paper' : 'Citation'}
               </div>
+              {tooltip.content.nodeIndex > 0 && (
+                <div className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold mb-2 ml-1 bg-black text-white">
+                  #{tooltip.content.nodeIndex}
+                </div>
+              )}
               <h3 className="font-semibold text-xs text-gray-900 mb-2 line-clamp-2 leading-tight">
                 {tooltip.content.title}
               </h3>
@@ -792,28 +913,61 @@ const CitationMesh = ({ papers, onClose, onNodeClick }) => {
         )}
         
         {/* Metrics Legend */}
-        {!loading && !error && elements.length > 0 && (
-          <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur-sm border border-gray-200 rounded-md shadow-md p-3 z-10 w-64 text-xs pointer-events-auto">
+        {!loading && !error && elements.length > 0 && !isSplitScreen && (
+          <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur-sm border border-gray-200 rounded-md shadow-md p-3 z-10 w-72 text-xs pointer-events-auto">
             <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-1.5">
               <Info className="w-4 h-4 text-blue-500" /> Graph Intelligence
             </h4>
-            <div className="space-y-2.5 text-gray-600">
+            {/* Node Types */}
+            <div className="mb-2 pb-2 border-b border-gray-100">
+              <div className="text-[10px] font-medium text-gray-500 uppercase tracking-wider mb-1.5">Node Types</div>
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-start gap-2">
+                  <div className="w-3 h-3 rounded-full bg-blue-500 border border-blue-600 flex-shrink-0 mt-0.5"></div>
+                  <span className="text-gray-700 leading-tight"><span className="font-medium text-gray-900">Root:</span> Direct search results.</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <div className="w-3 h-3 rotate-45 bg-amber-400 border border-amber-500 flex-shrink-0 mt-0.5"></div>
+                  <span className="text-gray-700 leading-tight"><span className="font-medium text-gray-900">Bridge:</span> Key papers connecting multiple Roots.</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <div className="w-3 h-3 rounded-full bg-slate-400 border border-slate-500 flex-shrink-0 mt-0.5"></div>
+                  <span className="text-gray-700 leading-tight"><span className="font-medium text-gray-900">Citation:</span> Connected to only one Root.</span>
+                </div>
+              </div>
+            </div>
+            {/* Edge Types */}
+            <div className="mb-2 pb-2 border-b border-gray-100">
+              <div className="text-[10px] font-medium text-gray-500 uppercase tracking-wider mb-1.5">Edge Types</div>
+              <div className="flex flex-wrap gap-3">
+                <div className="flex items-center gap-1">
+                  <div className="w-5 h-0.5 bg-slate-300"></div>
+                  <span className="text-gray-700">Cites</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-5 h-0.5 border-t-2 border-dashed border-indigo-300"></div>
+                  <span className="text-gray-700">Cited by</span>
+                </div>
+              </div>
+            </div>
+            {/* Metrics */}
+            <div className="space-y-2 text-gray-600">
               <div className="flex items-start gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-purple-500 mt-1 flex-shrink-0"></div>
                 <div>
-                  <span className="font-medium text-gray-900">PageRank:</span> Measures prestige based on citations from other highly-cited papers. Controls <span className="font-medium text-purple-600">node color</span>.
+                  <span className="font-medium text-gray-900">PageRank:</span> Prestige via highly-cited citations. Controls <span className="font-medium text-purple-600">node color</span>.
                 </div>
               </div>
               <div className="flex items-start gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-blue-500 mt-1 flex-shrink-0"></div>
                 <div>
-                  <span className="font-medium text-gray-900">Influence Score:</span> Represents in-degree centrality (citations within this specific graph). Controls <span className="font-medium text-blue-600">node size</span>.
+                  <span className="font-medium text-gray-900">Influence:</span> In-degree centrality in this graph. Controls <span className="font-medium text-blue-600">node size</span>.
                 </div>
               </div>
               <div className="flex items-start gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-green-500 mt-1 flex-shrink-0"></div>
                 <div>
-                  <span className="font-medium text-gray-900">Velocity:</span> The average number of new citations this paper receives per year.
+                  <span className="font-medium text-gray-900">Velocity:</span> Avg. new citations per year.
                 </div>
               </div>
             </div>

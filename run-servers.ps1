@@ -96,7 +96,7 @@ Write-Host "  Backend:  http://localhost:8000" -ForegroundColor White
 Write-Host "  API Docs: http://localhost:8000/docs" -ForegroundColor White
 Write-Host ""
 Write-Host "Press any key to exit this window (servers will keep running)..." -ForegroundColor Yellow
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+# $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+# $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 

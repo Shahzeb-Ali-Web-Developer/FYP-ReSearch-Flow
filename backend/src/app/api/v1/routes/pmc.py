@@ -7,7 +7,6 @@ import logging
 from ....services.pmc_service import fetch_pmc_papers, get_pmc_fulltext_from_xml
 from ....services.pdf_service import get_pdf_text_from_url
 from ....services.summarization_service import summarize_paper
-from ....services.chat_service import ask_about_paper
 
 router = APIRouter()
 
@@ -241,93 +240,3 @@ async def summarize_paper_endpoint(
                 "message": str(e)
             }
         )
-
-
-@router.post("/ask")
-async def ask_question_endpoint(
-    request_data: dict = Body(...)
-):
-    """
-    Ask a question about a research paper from PMC.
-    Accepts optional pdf_text to skip PDF re-extraction.
-    """
-    try:
-        pdf_url = request_data.get("pdf_url")
-        question = request_data.get("question")
-        pdf_text_direct = request_data.get("pdf_text")  # Optional: skip extraction
-        conversation_history = request_data.get("conversation_history", [])
-        paper_title = request_data.get("paper_title", "")
-        
-        if not question or not question.strip():
-            raise HTTPException(status_code=400, detail="Question is required")
-        
-        logging.info(f"Question: {question[:100]}...")
-        
-        # --- OPTIMIZATION: Use pre-extracted text if provided ---
-        if pdf_text_direct and len(pdf_text_direct.strip()) > 100:
-            pdf_text = pdf_text_direct
-            logging.info(f"Using pre-extracted PDF text ({len(pdf_text)} chars) — skipping PDF download")
-        else:
-            if not pdf_url:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Either 'pdf_url' or 'pdf_text' must be provided"
-                )
-            
-            pdf_text = None
-            extraction_error = None
-            
-            # Extract PMC ID from URL to try XML API first
-            import re
-            pmc_id = request_data.get("pmc_id")
-            if not pmc_id and pdf_url:
-                match = re.search(r'PMC(\d+)', pdf_url)
-                if match:
-                    pmc_id = match.group(1)
-            
-            if pmc_id:
-                logging.info(f"Trying PMC XML full-text extraction for PMC{pmc_id} for Q&A")
-                xml_text = get_pmc_fulltext_from_xml(pmc_id)
-                if xml_text and len(xml_text.strip()) > 200:
-                    pdf_text = xml_text
-                    logging.info(f"Successfully got full-text from PMC XML for Q&A: {len(pdf_text)} chars")
-            
-            if pdf_text is None:
-                logging.info(f"XML extraction failed/unavailable, trying PDF download: {pdf_url}")
-                pdf_text, extraction_error = get_pdf_text_from_url(pdf_url, max_pages=None)
-            
-            if pdf_text is None:
-                error_message = extraction_error or "PDF is not available or could not be processed."
-                raise HTTPException(
-                    status_code=404,
-                    detail={"error": "PDF not available", "message": error_message}
-                )
-        
-        answer = ask_about_paper(
-            question.strip(),
-            pdf_text,
-            conversation_history=conversation_history if conversation_history else None,
-            paper_title=paper_title or None,
-            paper_source="PMC",
-        )
-        
-        if not answer:
-            raise HTTPException(status_code=500, detail="Failed to generate answer. Please try again.")
-        
-        return {
-            "status": "success",
-            "pdf_url": pdf_url or "(text provided directly)",
-            "question": question,
-            "answer": answer
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error(f"Error answering question: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail={"error": "Failed to answer question", "message": str(e)}
-        )
-
-
