@@ -39,3 +39,9 @@ __pycache__/
 # Environment variables
 .env
 
+# Generated FYP report files (keep locally only)
+FYP_Evaluation_Report.pdf
+docs/FYP_Final_Report.md
+docs/images/
+scratch/
+
