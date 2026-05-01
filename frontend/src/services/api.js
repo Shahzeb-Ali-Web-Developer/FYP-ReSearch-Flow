@@ -391,7 +391,7 @@ export const arxivAPI = {
    * @param {string} pdfUrl - Optional PDF URL (alternative to arxivId)
    * @returns {Promise<Object>} Summary with structured sections
    */
-  async summarizePaper(arxivId = null, pdfUrl = null, title = "", abstract = "", pdfText = null) {
+  async summarizePaper(arxivId = null, pdfUrl = null, title = "", abstract = "") {
     try {
       const requestBody = { title, abstract };
       if (arxivId) {
@@ -401,8 +401,6 @@ export const arxivAPI = {
       } else {
         throw new APIError('Either arxivId or pdfUrl must be provided', 400);
       }
-      // Optional pre-extracted content to skip backend PDF download
-      if (pdfText && pdfText.length > 100) requestBody.pdf_text = pdfText;
 
       const response = await fetch(`${API_BASE_URL}/arxiv/summarize`, {
         method: 'POST',
@@ -571,7 +569,7 @@ export const coreAPI = {
    * @param {string} abstract - Optional abstract
    * @returns {Promise<Object>} Summary with structured sections
    */
-  async summarizePaper(pdfUrl, title = "", abstract = "", pdfText = null) {
+  async summarizePaper(pdfUrl, title = "", abstract = "") {
     try {
       if (!pdfUrl) {
         throw new APIError('pdfUrl must be provided', 400);
@@ -585,9 +583,7 @@ export const coreAPI = {
         body: JSON.stringify({ 
           pdf_url: pdfUrl,
           title: title,
-          abstract: abstract,
-          // Optional pre-extracted content to skip backend PDF download
-          ...(pdfText && pdfText.length > 100 ? { pdf_text: pdfText } : {})
+          abstract: abstract 
         }),
       });
 
@@ -744,7 +740,7 @@ export const pmcAPI = {
    * @param {string} pdfUrl - PDF URL
    * @returns {Promise<Object>} Summary with structured sections
    */
-  async summarizePaper(pdfUrl, pmcId = null, title = "", abstract = "", pdfText = null) {
+  async summarizePaper(pdfUrl, pmcId = null, title = "", abstract = "") {
     try {
       if (!pdfUrl && !pmcId) {
         throw new APIError('pdfUrl or pmcId must be provided', 400);
@@ -759,9 +755,7 @@ export const pmcAPI = {
           pdf_url: pdfUrl,
           pmc_id: pmcId,
           title: title,
-          abstract: abstract,
-          // Optional pre-extracted content to skip backend PDF download
-          ...(pdfText && pdfText.length > 100 ? { pdf_text: pdfText } : {})
+          abstract: abstract
         }),
       });
 
@@ -918,7 +912,7 @@ export const semanticScholarAPI = {
    * @param {string} pdfUrl - PDF URL
    * @returns {Promise<Object>} Summary with structured sections
    */
-  async summarizePaper(pdfUrl, title = "", abstract = "", pdfText = null) {
+  async summarizePaper(pdfUrl, title = "", abstract = "") {
     try {
       if (!pdfUrl) {
         throw new APIError('pdfUrl must be provided', 400);
@@ -932,9 +926,7 @@ export const semanticScholarAPI = {
         body: JSON.stringify({ 
           pdf_url: pdfUrl,
           title: title,
-          abstract: abstract,
-          // Optional pre-extracted content to skip backend PDF download
-          ...(pdfText && pdfText.length > 100 ? { pdf_text: pdfText } : {})
+          abstract: abstract 
         }),
       });
 
@@ -1091,7 +1083,7 @@ export const googleScholarAPI = {
    * @param {string} pdfUrl - PDF URL
    * @returns {Promise<Object>} Summary with structured sections
    */
-  async summarizePaper(pdfUrl, title = "", abstract = "", pdfText = null) {
+  async summarizePaper(pdfUrl, title = "", abstract = "") {
     try {
       if (!pdfUrl) {
         throw new APIError('pdfUrl must be provided', 400);
@@ -1105,9 +1097,7 @@ export const googleScholarAPI = {
         body: JSON.stringify({ 
           pdf_url: pdfUrl,
           title: title,
-          abstract: abstract,
-          // Optional pre-extracted content to skip backend PDF download
-          ...(pdfText && pdfText.length > 100 ? { pdf_text: pdfText } : {})
+          abstract: abstract 
         }),
       });
 

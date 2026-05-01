@@ -7,7 +7,7 @@ import logging
 from ....services.core_service import fetch_core_papers
 from ....services.pdf_service import get_pdf_text_from_url
 from ....services.summarization_service import summarize_paper
-from ....services.llm_service import ask_question_with_llm
+from ....services.chat_service import ask_about_paper
 
 router = APIRouter()
 
@@ -154,7 +154,6 @@ async def summarize_paper_endpoint(
         pdf_url = request_data.get("pdf_url")
         title = request_data.get("title", "")
         abstract = request_data.get("abstract", "")
-        pdf_text_direct = request_data.get("pdf_text")  # Optional: skip extraction
         
         if not pdf_url and not abstract:
             raise HTTPException(
@@ -164,14 +163,9 @@ async def summarize_paper_endpoint(
         
         pdf_text = None
         fallback_used = False
-
-        # --- OPTIMIZATION: Use pre-extracted text if provided ---
-        if pdf_text_direct and len(str(pdf_text_direct).strip()) > 100:
-            pdf_text = str(pdf_text_direct)
-            logging.info(f"Using pre-extracted PDF text ({len(pdf_text)} chars) — skipping PDF download")
         
         # Try PDF extraction first
-        if pdf_text is None and pdf_url:
+        if pdf_url:
             logging.info(f"Summarizing paper from: {pdf_url}")
             pdf_text, extraction_error = get_pdf_text_from_url(pdf_url, max_pages=None)
             
@@ -228,66 +222,69 @@ async def summarize_paper_endpoint(
             }
         )
 
+
 @router.post("/ask")
 async def ask_question_endpoint(
     request_data: dict = Body(...)
 ):
     """
-    Ask a question about a research paper.
+    Ask a question about a research paper from CORE.
+    Accepts optional pdf_text to skip PDF re-extraction.
     """
     try:
         pdf_url = request_data.get("pdf_url")
         question = request_data.get("question")
-        history = request_data.get("conversation_history", [])
-        pdf_text_direct = request_data.get("pdf_text")
+        pdf_text_direct = request_data.get("pdf_text")  # Optional: skip extraction
+        conversation_history = request_data.get("conversation_history", [])
         
-        if not question:
-            raise HTTPException(status_code=400, detail="'question' must be provided")
+        if not question or not question.strip():
+            raise HTTPException(status_code=400, detail="Question is required")
+        
+        logging.info(f"Question: {question[:100]}...")
+        
+        # --- OPTIMIZATION: Use pre-extracted text if provided ---
+        if pdf_text_direct and len(pdf_text_direct.strip()) > 100:
+            pdf_text = pdf_text_direct
+            logging.info(f"Using pre-extracted PDF text ({len(pdf_text)} chars) — skipping PDF download")
+        else:
+            if not pdf_url:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Either 'pdf_url' or 'pdf_text' must be provided"
+                )
+            logging.info(f"Extracting PDF from URL: {pdf_url}")
+            pdf_text, extraction_error = get_pdf_text_from_url(pdf_url, max_pages=None)
             
-        target_url = pdf_url
-            
-        if not target_url and not pdf_text_direct:
-            raise HTTPException(
-                status_code=400,
-                detail="Either 'pdf_url' or 'pdf_text' must be provided"
-            )
-            
-        pdf_text = None
-        if pdf_text_direct and len(str(pdf_text_direct).strip()) > 100:
-            pdf_text = str(pdf_text_direct)
-            logging.info(f"Using pre-extracted PDF text ({len(pdf_text)} chars) for Q&A")
-            
-        if pdf_text is None and target_url:
-            pdf_text, extraction_error = get_pdf_text_from_url(target_url, max_pages=None)
             if pdf_text is None:
+                error_message = extraction_error or "PDF is not available or could not be processed."
                 raise HTTPException(
                     status_code=404,
-                    detail={
-                        "error": "PDF not available",
-                        "message": extraction_error or "PDF could not be extracted"
-                    }
+                    detail={"error": "PDF not available", "message": error_message}
                 )
-                
-        answer = ask_question_with_llm(pdf_text, question, history)
+        
+        answer = ask_about_paper(
+            question.strip(),
+            pdf_text,
+            conversation_history=conversation_history if conversation_history else None
+        )
         
         if not answer:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to generate an answer from the paper content"
-            )
-            
+            raise HTTPException(status_code=500, detail="Failed to generate answer. Please try again.")
+        
         return {
             "status": "success",
+            "pdf_url": pdf_url or "(text provided directly)",
+            "question": question,
             "answer": answer
         }
+        
     except HTTPException:
         raise
     except Exception as e:
         logging.error(f"Error answering question: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail={
-                "error": "Failed to answer question",
-                "message": str(e)
-            }
+            detail={"error": "Failed to answer question", "message": str(e)}
         )
+
+
