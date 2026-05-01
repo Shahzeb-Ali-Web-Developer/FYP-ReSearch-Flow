@@ -7,6 +7,7 @@ import logging
 from ....services.pmc_service import fetch_pmc_papers, get_pmc_fulltext_from_xml
 from ....services.pdf_service import get_pdf_text_from_url
 from ....services.summarization_service import summarize_paper
+from ....services.llm_service import ask_question_with_llm
 
 router = APIRouter()
 
@@ -237,6 +238,86 @@ async def summarize_paper_endpoint(
             status_code=500,
             detail={
                 "error": "Failed to summarize paper",
+                "message": str(e)
+            }
+        )
+
+@router.post("/ask")
+async def ask_question_endpoint(
+    request_data: dict = Body(...)
+):
+    """
+    Ask a question about a research paper.
+    """
+    try:
+        pdf_url = request_data.get("pdf_url")
+        pmc_id = request_data.get("pmc_id")
+        question = request_data.get("question")
+        history = request_data.get("conversation_history", [])
+        pdf_text_direct = request_data.get("pdf_text")
+        
+        if not question:
+            raise HTTPException(status_code=400, detail="'question' must be provided")
+            
+        if not pmc_id and pdf_url:
+            import re
+            match = re.search(r'PMC(\d+)', pdf_url)
+            if match:
+                pmc_id = match.group(1)
+            
+        if not pdf_url and not pmc_id and not pdf_text_direct:
+            raise HTTPException(
+                status_code=400,
+                detail="Either 'pdf_url', 'pmc_id', or 'pdf_text' must be provided"
+            )
+            
+        pdf_text = None
+        if pdf_text_direct and len(str(pdf_text_direct).strip()) > 100:
+            pdf_text = str(pdf_text_direct)
+            logging.info(f"Using pre-extracted PDF text ({len(pdf_text)} chars) for Q&A")
+            
+        if pdf_text is None and pmc_id:
+            xml_text = get_pmc_fulltext_from_xml(pmc_id)
+            if xml_text and len(xml_text.strip()) > 200:
+                pdf_text = xml_text
+                
+        if pdf_text is None and pdf_url:
+            pdf_text, extraction_error = get_pdf_text_from_url(pdf_url, max_pages=None)
+            if pdf_text is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "error": "PDF not available",
+                        "message": extraction_error or "PDF could not be extracted"
+                    }
+                )
+                
+        if pdf_text is None:
+            raise HTTPException(
+                status_code=404,
+                detail="PDF or XML content could not be extracted"
+            )
+                
+        answer = ask_question_with_llm(pdf_text, question, history)
+        
+        if not answer:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to generate an answer from the paper content"
+            )
+            
+        return {
+            "status": "success",
+            "answer": answer
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error answering question: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Failed to answer question",
                 "message": str(e)
             }
         )

@@ -245,3 +245,88 @@ def _parse_llm_summary(summary_text: str) -> Dict[str, str]:
     
     return summary
 
+
+def ask_question_with_llm(text: str, question: str, history: list = None, model: str = "gpt-4o") -> Optional[str]:
+    """
+    Ask a question about a research paper using LLM.
+    
+    Args:
+        text: Full text of the paper
+        question: User's question
+        history: Conversation history list of dicts [{'role': 'user', 'content': '...'}, ...]
+        model: Model to use
+    
+    Returns:
+        String containing the answer, or None if error
+    """
+    api_url: Optional[str] = None
+    api_key: Optional[str] = None
+    extra_headers: Dict[str, str] = {}
+
+    if settings.OPENAI_API_KEY:
+        api_url = OPENAI_API_URL
+        api_key = settings.OPENAI_API_KEY
+    elif getattr(settings, "OPENROUTER_API_KEY", None):
+        api_url = OPENROUTER_API_URL
+        api_key = settings.OPENROUTER_API_KEY  # type: ignore[attr-defined]
+        extra_headers = {
+            "HTTP-Referer": "https://fyp-re-search-flow.local",
+            "X-Title": "ReSearch Flow",
+        }
+    else:
+        logging.error("No LLM API key configured")
+        return None
+        
+    if not text or len(text.strip()) < 100:
+        logging.warning("Text too short to answer questions")
+        return None
+        
+    try:
+        max_chars = 100000
+        if len(text) > max_chars:
+            text = text[:max_chars] + "\n\n[Content truncated...]"
+            
+        system_prompt = f"""You are an expert academic researcher. Answer the user's question based ONLY on the provided research paper content.
+If the answer is not in the paper, clearly state that you cannot find the answer in the provided text.
+
+Research Paper Content:
+{text}
+"""
+        messages = [{"role": "system", "content": system_prompt}]
+        
+        if history:
+            messages.extend(history)
+            
+        messages.append({"role": "user", "content": question})
+        
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        headers.update(extra_headers)
+        
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.3,
+            "max_tokens": 1000
+        }
+        
+        logging.info(f"Calling LLM API to answer question with model: {model}")
+        response = requests.post(api_url, headers=headers, json=payload, timeout=60) # type: ignore[arg-type]
+        response.raise_for_status()
+        
+        result = response.json()
+        
+        if "choices" in result and len(result["choices"]) > 0:
+            answer = result["choices"][0]["message"]["content"]
+            return answer
+        else:
+            logging.error(f"Unexpected API response format: {result}")
+            return None
+            
+    except Exception as e:
+        logging.error(f"Error in LLM answering: {str(e)}", exc_info=True)
+        return None
+
+
