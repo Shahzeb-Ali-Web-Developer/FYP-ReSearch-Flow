@@ -13,7 +13,17 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: Optional[str] = None
     CORE_API_KEY: Optional[str] = None
     SERPAPI_API_KEY: Optional[str] = None
+    PINECONE_API_KEY: Optional[str] = None
     
+    # Pinecone RAG Configuration
+    PINECONE_INDEX_NAME: str = "research-papers"
+    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
+    
+    # Upstash Redis Configuration
+    UPSTASH_REDIS_REST_URL: Optional[str] = None
+    UPSTASH_REDIS_REST_TOKEN: Optional[str] = None
+    REDIS_CHAT_TTL: int = 3600  # 1 hour TTL for chat sessions
+
     # Neo4j Configuration
     NEO4J_URI: str = "bolt://localhost:7687"
     NEO4J_USER: str = "neo4j"

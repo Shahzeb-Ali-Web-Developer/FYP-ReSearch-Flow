@@ -1244,4 +1244,80 @@ export const draftAPI = {
   }
 };
 
+// Unified Chat API — uses /chat/ask with Redis session persistence
+export const chatAPI = {
+  /**
+   * Ask a question about a paper using RAG (Pinecone + LangChain + Redis).
+   * @param {string} question - The question to ask
+   * @param {object} options - { pdfText, pdfUrl, abstract, sessionId, paperTitle, paperSource }
+   * @returns {Promise<Object>} { status, session_id, question, answer }
+   */
+  async askQuestion(question, { pdfText, pdfUrl, abstract, sessionId, paperTitle, paperSource } = {}) {
+    try {
+      const requestBody = { question };
+      if (pdfText && pdfText.length > 50) requestBody.pdf_text = pdfText;
+      if (pdfUrl) requestBody.pdf_url = pdfUrl;
+      if (abstract) requestBody.abstract = abstract;
+      if (sessionId) requestBody.session_id = sessionId;
+      if (paperTitle) requestBody.paper_title = paperTitle;
+      if (paperSource) requestBody.paper_source = paperSource;
+
+      const response = await fetch(`${API_BASE_URL}/chat/ask`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new APIError(
+          data.detail?.message || data.detail || 'Failed to get answer',
+          response.status,
+          data.detail
+        );
+      }
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) throw error;
+      throw new APIError('Network error: Could not connect to server', 0, { originalError: error.message });
+    }
+  },
+
+  /**
+   * Get chat history for a session from Redis.
+   * @param {string} sessionId - Session ID
+   */
+  async getHistory(sessionId) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/chat/history/${sessionId}`);
+      const data = await response.json();
+      if (!response.ok) {
+        throw new APIError(data.detail?.message || 'Failed to get history', response.status, data.detail);
+      }
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) throw error;
+      throw new APIError('Network error', 0, { originalError: error.message });
+    }
+  },
+
+  /**
+   * Clear chat history for a session.
+   * @param {string} sessionId - Session ID
+   */
+  async clearHistory(sessionId) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/chat/history/${sessionId}`, { method: 'DELETE' });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new APIError(data.detail?.message || 'Failed to clear history', response.status, data.detail);
+      }
+      return data;
+    } catch (error) {
+      if (error instanceof APIError) throw error;
+      throw new APIError('Network error', 0, { originalError: error.message });
+    }
+  }
+};
+
 export { APIError };

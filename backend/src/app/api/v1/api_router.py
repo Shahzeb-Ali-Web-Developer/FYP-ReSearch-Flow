@@ -9,6 +9,7 @@ from src.app.api.v1.routes.semantic_scholar import router as semantic_scholar_ro
 from src.app.api.v1.routes.google_scholar import router as google_scholar_router
 from src.app.api.v1.routes.trends import router as trends_router
 from src.app.api.v1.routes.draft import router as draft_router
+from src.app.api.v1.routes.chat import router as chat_router
 
 api_router = APIRouter()
 
@@ -22,3 +23,4 @@ api_router.include_router(semantic_scholar_router, prefix="/semantic-scholar", t
 api_router.include_router(google_scholar_router, prefix="/google-scholar", tags=["Google Scholar Search & Summarization"])
 api_router.include_router(trends_router, prefix="/trends", tags=["Trending Topics"])
 api_router.include_router(draft_router, prefix="/draft", tags=["Draft Generation"])
+api_router.include_router(chat_router, prefix="/chat", tags=["Paper Chat (RAG)"])

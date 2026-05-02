@@ -101,13 +101,11 @@ async def extract_pdf_content(
         
         if pdf_text is None:
             error_message = extraction_error or "PDF is not available or could not be processed."
-            raise HTTPException(
-                status_code=404,
-                detail={
-                    "error": "PDF not available",
-                    "message": error_message
-                }
-            )
+            return {
+                "status": "error",
+                "message": error_message,
+                "pdf_url": pdf_url
+            }
         
         return {
             "status": "success",
@@ -236,6 +234,7 @@ async def ask_question_endpoint(
         question = request_data.get("question")
         pdf_text_direct = request_data.get("pdf_text")  # Optional: skip extraction
         conversation_history = request_data.get("conversation_history", [])
+        abstract = request_data.get("abstract", "")
         
         if not question or not question.strip():
             raise HTTPException(status_code=400, detail="Question is required")
@@ -243,29 +242,45 @@ async def ask_question_endpoint(
         logging.info(f"Question: {question[:100]}...")
         
         # --- OPTIMIZATION: Use pre-extracted text if provided ---
-        if pdf_text_direct and len(pdf_text_direct.strip()) > 100:
+        if pdf_text_direct and len(pdf_text_direct.strip()) > 10:
             pdf_text = pdf_text_direct
             logging.info(f"Using pre-extracted PDF text ({len(pdf_text)} chars) — skipping PDF download")
         else:
             if not pdf_url:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Either 'pdf_url' or 'pdf_text' must be provided"
-                )
-            logging.info(f"Extracting PDF from URL: {pdf_url}")
-            pdf_text, extraction_error = get_pdf_text_from_url(pdf_url, max_pages=None)
-            
-            if pdf_text is None:
-                error_message = extraction_error or "PDF is not available or could not be processed."
-                raise HTTPException(
-                    status_code=404,
-                    detail={"error": "PDF not available", "message": error_message}
-                )
+                # Fall back to abstract if no pdf source
+                if abstract and len(abstract.strip()) > 10:
+                    pdf_text = abstract
+                    logging.info("No PDF available — using abstract for Q&A")
+                else:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Either 'pdf_url', 'pdf_text', or 'abstract' must be provided"
+                    )
+            else:
+                logging.info(f"Extracting PDF from URL: {pdf_url}")
+                pdf_text, extraction_error = get_pdf_text_from_url(pdf_url, max_pages=None)
+                
+                if pdf_text is None:
+                    # Fall back to abstract if PDF fails
+                    if abstract and len(abstract.strip()) > 10:
+                        pdf_text = abstract
+                        logging.info("PDF extraction failed — using abstract for Q&A")
+                    else:
+                        error_message = extraction_error or "PDF is not available or could not be processed."
+                        raise HTTPException(
+                            status_code=404,
+                            detail={"error": "PDF not available", "message": error_message}
+                        )
         
+        title = request_data.get("title", "")
+        source = request_data.get("source", "CORE")
+
         answer = ask_about_paper(
             question.strip(),
             pdf_text,
-            conversation_history=conversation_history if conversation_history else None
+            conversation_history=conversation_history if conversation_history else None,
+            paper_title=title or None,
+            paper_source=source,
         )
         
         if not answer:

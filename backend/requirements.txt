@@ -16,3 +16,9 @@ google-search-results
 pydantic-settings
 neo4j==6.0.3
 py2neo==2021.2.4
+langchain
+langchain-openai
+langchain-pinecone
+langchain-text-splitters
+pinecone-client
+upstash-redis

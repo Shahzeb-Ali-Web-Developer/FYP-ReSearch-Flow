@@ -3,6 +3,7 @@ Google Scholar API Service
 Handles queries to Google Scholar using SerpAPI.
 """
 import logging
+import os
 import requests
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -24,7 +25,7 @@ def fetch_google_scholar_papers(query: str, limit: int = 20) -> List[Dict[str, A
         List of paper dictionaries with Google Scholar-specific fields
     """
     # Check if SerpAPI key is configured
-    serpapi_key = getattr(settings, 'SERPAPI_API_KEY', None)
+    serpapi_key = getattr(settings, "SERPAPI_API_KEY", None) or os.getenv("SERPAPI_API_KEY")
     if not serpapi_key:
         logging.warning("SERPAPI_API_KEY not configured, Google Scholar search unavailable")
         return []

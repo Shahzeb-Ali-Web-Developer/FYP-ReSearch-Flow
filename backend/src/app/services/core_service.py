@@ -3,6 +3,7 @@ CORE API Service
 Handles queries to the CORE API for academic papers.
 """
 import logging
+import os
 import requests
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -22,7 +23,8 @@ def fetch_core_papers(query: str, limit: int = 20) -> List[Dict[str, Any]]:
     Returns:
         List of paper dictionaries with CORE-specific fields
     """
-    if not settings.CORE_API_KEY:
+    core_api_key = settings.CORE_API_KEY or os.getenv("CORE_API_KEY")
+    if not core_api_key:
         logging.error("CORE_API_KEY not configured")
         return []
     
@@ -30,7 +32,7 @@ def fetch_core_papers(query: str, limit: int = 20) -> List[Dict[str, Any]]:
     
     try:
         headers = {
-            "Authorization": f"Bearer {settings.CORE_API_KEY}",
+            "Authorization": f"Bearer {core_api_key}",
             "Content-Type": "application/json"
         }
         

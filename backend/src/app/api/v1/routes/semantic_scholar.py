@@ -101,13 +101,11 @@ async def extract_pdf_content(
         
         if pdf_text is None:
             error_message = extraction_error or "PDF is not available or could not be processed."
-            raise HTTPException(
-                status_code=404,
-                detail={
-                    "error": "PDF not available",
-                    "message": error_message
-                }
-            )
+            return {
+                "status": "error",
+                "message": error_message,
+                "pdf_url": pdf_url
+            }
         
         return {
             "status": "success",
@@ -263,7 +261,7 @@ async def ask_question_endpoint(
         
         # --- OPTIMIZATION: Use pre-extracted text if provided by frontend ---
         # This avoids re-downloading and re-extracting the PDF on every question.
-        if pdf_text_direct and len(pdf_text_direct.strip()) > 100:
+        if pdf_text_direct and len(pdf_text_direct.strip()) > 50:
             pdf_text = pdf_text_direct
             logging.info(f"Using pre-extracted PDF text ({len(pdf_text)} chars) — skipping PDF download")
         else:
@@ -287,11 +285,16 @@ async def ask_question_endpoint(
                     }
                 )
         
+        title = request_data.get("title", "")
+        source = request_data.get("source", "Semantic Scholar")
+
         # Get answer from LLM
         answer = ask_about_paper(
             question.strip(),
             pdf_text,
-            conversation_history=conversation_history if conversation_history else None
+            conversation_history=conversation_history if conversation_history else None,
+            paper_title=title or None,
+            paper_source=source,
         )
         
         return {

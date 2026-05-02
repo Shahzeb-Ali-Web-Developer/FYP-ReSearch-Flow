@@ -31,7 +31,8 @@ def fetch_semantic_scholar_papers(query: str, limit: int = 20) -> List[Dict[str,
         params = {
             "query": query,
             "limit": min(limit, 100),  # Semantic Scholar API limit
-            "fields": "paperId,title,authors,year,abstract,venue,openAccessPdf,citationCount,referenceCount,publicationTypes,fieldsOfStudy,publicationDate,url,externalIds"
+            # Keep fields conservative to avoid API 400 on unsupported fields.
+            "fields": "paperId,title,authors,year,abstract,venue,openAccessPdf,citationCount,publicationDate,url,externalIds"
         }
         
         headers = {
@@ -62,6 +63,10 @@ def fetch_semantic_scholar_papers(query: str, limit: int = 20) -> List[Dict[str,
             logging.error("Semantic Scholar API rate limit exceeded")
         else:
             logging.error(f"Semantic Scholar API HTTP error: {str(e)}")
+            try:
+                logging.error(f"Semantic Scholar API response: {e.response.text}")
+            except Exception:
+                pass
         return []
     except requests.exceptions.RequestException as e:
         logging.error(f"Semantic Scholar API error: {str(e)}")

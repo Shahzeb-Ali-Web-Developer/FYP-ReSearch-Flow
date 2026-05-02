@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { searchAPI, savedArticlesAPI, arxivAPI, coreAPI, pmcAPI, semanticScholarAPI, googleScholarAPI, draftAPI, APIError } from '../services/api';
+import { searchAPI, savedArticlesAPI, arxivAPI, coreAPI, pmcAPI, semanticScholarAPI, googleScholarAPI, draftAPI, chatAPI, APIError } from '../services/api';
 import {
   BookOpen, X, FileText, MessageSquare, Code, Download,
   ChevronDown, ChevronUp, Plus, Trash2, MoreVertical, ArrowUpDown, BarChart3, CheckSquare, Network,
@@ -447,6 +447,7 @@ const DetailPanel = ({ paper, onClose, summaryJobs, onStartSummarize, isSplitScr
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
+  const [chatSessionId, setChatSessionId] = useState(null);
 
   const [draft, setDraft] = useState(null);
   const [draftFigures, setDraftFigures] = useState([]);
@@ -491,6 +492,7 @@ const DetailPanel = ({ paper, onClose, summaryJobs, onStartSummarize, isSplitScr
     setShowChat(false);
     setChatMessages([]);
     setChatInput('');
+    setChatSessionId(null);
 
     setDraft(null);
     setDraftFigures([]);
@@ -710,14 +712,9 @@ const DetailPanel = ({ paper, onClose, summaryJobs, onStartSummarize, isSplitScr
     setChatLoading(true);
 
     try {
-      // Build conversation history (last 10 messages to keep context manageable)
-      const history = chatMessages.slice(-10).map(msg => ({
-        role: msg.role,
-        content: msg.content
-      }));
-
       // If we don't have pdfContent yet (no prior summarization), extract it first
       let currentPdfContent = pdfContent;
+      let usedAbstractFallback = false;
       if (!currentPdfContent && pdfUrlForExtract) {
         showToast('Extracting paper content for the first time...', 'info');
         try {
@@ -725,17 +722,24 @@ const DetailPanel = ({ paper, onClose, summaryJobs, onStartSummarize, isSplitScr
           if (extractResponse.status === 'success' && extractResponse.full_text) {
             currentPdfContent = extractResponse.full_text;
             setPdfContent(currentPdfContent);
+          } else {
+            console.info('No direct PDF available for extraction, using abstract for chat context.');
+            if (abstract) {
+              currentPdfContent = abstract;
+              usedAbstractFallback = true;
+            }
           }
         } catch (extractErr) {
-          console.warn('PDF extraction failed, will try with abstract fallback:', extractErr.message);
-          // If abstract is available, use it as fallback content
+          console.info('No direct PDF available for extraction, using abstract for chat context.');
           if (abstract) {
             currentPdfContent = abstract;
+            usedAbstractFallback = true;
           }
         }
       } else if (!currentPdfContent && abstract) {
         // No PDF, but have abstract — use it as the paper content
         currentPdfContent = abstract;
+        usedAbstractFallback = true;
       }
 
       if (!currentPdfContent && !pdfUrlForExtract) {
@@ -745,23 +749,26 @@ const DetailPanel = ({ paper, onClose, summaryJobs, onStartSummarize, isSplitScr
         return;
       }
 
-      let response;
-      // Pass pre-extracted pdfContent to skip backend re-extraction (optimization)
-      if (isArxiv) {
-        response = await arxivAPI.askQuestion(arxivId || null, pdfUrlForExtract || null, userQuestion, history, currentPdfContent);
-      } else if (isCore) {
-        response = await coreAPI.askQuestion(pdfUrlForExtract, userQuestion, history, currentPdfContent);
-      } else if (isPmc) {
-        response = await pmcAPI.askQuestion(pdfUrlForExtract, userQuestion, history, currentPdfContent);
-      } else if (isOpenAlex || isSemanticScholar) {
-        response = await semanticScholarAPI.askQuestion(pdfUrlForExtract, userQuestion, history, currentPdfContent);
-      } else if (isGoogleScholar) {
-        response = await googleScholarAPI.askQuestion(pdfUrlForExtract, userQuestion, history, currentPdfContent);
-      } else {
-        response = await semanticScholarAPI.askQuestion(pdfUrlForExtract, userQuestion, history, currentPdfContent);
-      }
+      // Determine paper source for metadata
+      const paperSource = isArxiv ? 'arXiv' : isCore ? 'CORE' : isPmc ? 'PMC'
+        : isGoogleScholar ? 'Google Scholar' : isSemanticScholar ? 'Semantic Scholar' : 'Unknown';
+
+      // Use unified chatAPI with Redis session persistence
+      const response = await chatAPI.askQuestion(userQuestion, {
+        // If we only have abstract fallback, still pass pdfUrl so backend can retry extraction.
+        pdfText: usedAbstractFallback ? undefined : currentPdfContent,
+        pdfUrl: pdfUrlForExtract || undefined,
+        abstract: abstract || undefined,
+        sessionId: chatSessionId || undefined,
+        paperTitle: paper.title || undefined,
+        paperSource: paperSource,
+      });
 
       if (response.status === 'success' && response.answer) {
+        // Store session_id for subsequent messages
+        if (response.session_id) {
+          setChatSessionId(response.session_id);
+        }
         const assistantMessage = { role: 'assistant', content: response.answer };
         setChatMessages(prev => [...prev, assistantMessage]);
       } else {

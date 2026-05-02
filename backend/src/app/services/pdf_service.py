@@ -59,8 +59,25 @@ def download_pdf(url: str, timeout: int = 30) -> Tuple[Optional[bytes], Optional
         content_type = response.headers.get('Content-Type', '').lower()
         if 'pdf' in content_type or response.content[:4] == b'%PDF':
             return (response.content, None)
+        elif 'html' in content_type:
+            # Try to extract the direct PDF link from meta tags
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(response.content, 'html.parser')
+            meta_tag = soup.find('meta', attrs={'name': 'citation_pdf_url'})
+            if meta_tag and meta_tag.get('content'):
+                pdf_link = meta_tag.get('content')
+                logging.info(f"Found citation_pdf_url in HTML: {pdf_link}")
+                pdf_response = requests.get(pdf_link, headers=headers, timeout=timeout)
+                pdf_response.raise_for_status()
+                pdf_content_type = pdf_response.headers.get('Content-Type', '').lower()
+                if 'pdf' in pdf_content_type or pdf_response.content[:4] == b'%PDF':
+                    return (pdf_response.content, None)
+                
+            error_msg = "The URL points to an HTML page, and no direct PDF link could be found."
+            logging.warning(f"URL is HTML and no citation_pdf_url found: {url}")
+            return (None, error_msg)
         else:
-            error_msg = "The URL does not point to a valid PDF file."
+            error_msg = f"The URL does not point to a valid PDF file. Content-Type: {content_type}"
             logging.warning(f"URL does not appear to be a PDF: {url}")
             return (None, error_msg)
             
