@@ -1262,11 +1262,21 @@ export const chatAPI = {
       if (paperTitle) requestBody.paper_title = paperTitle;
       if (paperSource) requestBody.paper_source = paperSource;
 
-      const response = await fetch(`${API_BASE_URL}/chat/ask`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-      });
+      const controller = new AbortController();
+      const chatAskTimeoutMs = 600000; // 10 min — first request may index a full PDF + embeddings
+      const timeoutId = setTimeout(() => controller.abort(), chatAskTimeoutMs);
+
+      let response;
+      try {
+        response = await fetch(`${API_BASE_URL}/chat/ask`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       const data = await response.json();
       if (!response.ok) {
@@ -1279,6 +1289,13 @@ export const chatAPI = {
       return data;
     } catch (error) {
       if (error instanceof APIError) throw error;
+      if (error?.name === 'AbortError') {
+        throw new APIError(
+          'Request timed out. The first question can take a while while the paper is indexed; try again or use a shorter paper.',
+          0,
+          { originalError: 'AbortError' }
+        );
+      }
       throw new APIError('Network error: Could not connect to server', 0, { originalError: error.message });
     }
   },

@@ -3,6 +3,7 @@ Unified Chat Routes
 Handles paper Q&A conversations with Redis-backed session persistence.
 All chat goes through chat_service.py using RAG (Pinecone + LangChain).
 """
+import asyncio
 import uuid
 import logging
 from fastapi import APIRouter, HTTPException, Body
@@ -10,6 +11,7 @@ from ....services.chat_service import (
     ask_about_paper_with_session,
     load_session,
     delete_session,
+    make_paper_id,
 )
 from ....services.pdf_service import get_pdf_text_from_url
 
@@ -41,7 +43,8 @@ async def chat_ask(request_data: dict = Body(...)):
             "status": "success",
             "session_id": "uuid",
             "question": "...",
-            "answer": "..."
+            "answer": "...",
+            "paper_id": "40-char hex hash of paper text (Pinecone namespace)"
         }
     """
     try:
@@ -84,13 +87,15 @@ async def chat_ask(request_data: dict = Body(...)):
             )
 
         # ── Get answer via RAG (Pinecone + LangChain + Redis) ─────────
-        answer = ask_about_paper_with_session(
-            session_id=session_id,
-            question=question,
-            paper_text=pdf_text,
-            model=model,
-            paper_title=paper_title or None,
-            paper_source=paper_source or None,
+        # Run sync RAG in a thread so indexing + LLM work does not block the event loop.
+        answer = await asyncio.to_thread(
+            ask_about_paper_with_session,
+            session_id,
+            question,
+            pdf_text,
+            model,
+            paper_title or None,
+            paper_source or None,
         )
 
         if not answer:
@@ -104,6 +109,7 @@ async def chat_ask(request_data: dict = Body(...)):
             "session_id": session_id,
             "question": question,
             "answer": answer,
+            "paper_id": make_paper_id(pdf_text),
         }
 
     except HTTPException:

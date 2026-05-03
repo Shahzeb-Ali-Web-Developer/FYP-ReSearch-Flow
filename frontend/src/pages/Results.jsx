@@ -769,7 +769,11 @@ const DetailPanel = ({ paper, onClose, summaryJobs, onStartSummarize, isSplitScr
         if (response.session_id) {
           setChatSessionId(response.session_id);
         }
-        const assistantMessage = { role: 'assistant', content: response.answer };
+        const assistantMessage = {
+          role: 'assistant',
+          content: response.answer,
+          ...(response.paper_id ? { paperId: response.paper_id } : {}),
+        };
         setChatMessages(prev => [...prev, assistantMessage]);
       } else {
         showToast('Failed to get answer', 'error');
@@ -1196,6 +1200,11 @@ const DetailPanel = ({ paper, onClose, summaryJobs, onStartSummarize, isSplitScr
                       : 'bg-gray-100 text-gray-800'
                       }`}>
                       <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                      {msg.role === 'assistant' && msg.paperId && (
+                        <p className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-200 font-mono break-all">
+                          Paper hash id: {msg.paperId}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
