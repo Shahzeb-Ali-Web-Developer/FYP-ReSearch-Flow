@@ -1,12 +1,31 @@
 """
 PubMed Central (PMC) API Service
 Handles queries to the NCBI E-utilities API for PMC articles.
+
+PDF Download Strategy:
+  PMC's direct PDF URLs (pmc.ncbi.nlm.nih.gov/articles/PMC.../pdf/) are protected
+  by Cloudflare bot-detection and cannot be fetched programmatically.
+  Instead, we fetch the article's full XML via E-utilities (no bot protection),
+  parse out all sections, and render a clean PDF locally using reportlab.
+  Call `download_pmc_as_pdf(pmc_id, output_path)` to get a real PDF file.
 """
+import io
 import logging
 import requests
 import xml.etree.ElementTree as ET
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+from pathlib import Path
+
+# ReportLab imports for PDF generation
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.lib import colors
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, HRFlowable, PageBreak
+)
+from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY
 
 PMC_EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 PMC_BASE_URL = "https://pmc.ncbi.nlm.nih.gov/articles/"
@@ -86,6 +105,348 @@ def get_pmc_fulltext_from_xml(pmc_id: str) -> Optional[str]:
         logging.error(f"Error fetching PMC full-text XML for {pmc_id}: {str(e)}")
         return None
 
+
+
+def _build_pmc_styles() -> dict:
+    """Build a set of ReportLab paragraph styles for PMC articles."""
+    base = getSampleStyleSheet()
+
+    styles = {
+        "title": ParagraphStyle(
+            "ArticleTitle",
+            parent=base["Title"],
+            fontSize=18,
+            leading=24,
+            spaceAfter=8,
+            textColor=colors.HexColor("#1a1a2e"),
+            alignment=TA_LEFT,
+        ),
+        "authors": ParagraphStyle(
+            "Authors",
+            parent=base["Normal"],
+            fontSize=10,
+            leading=14,
+            spaceAfter=4,
+            textColor=colors.HexColor("#444444"),
+            fontName="Helvetica-Oblique",
+        ),
+        "meta": ParagraphStyle(
+            "Meta",
+            parent=base["Normal"],
+            fontSize=9,
+            leading=13,
+            spaceAfter=4,
+            textColor=colors.HexColor("#666666"),
+        ),
+        "abstract_heading": ParagraphStyle(
+            "AbstractHeading",
+            parent=base["Heading2"],
+            fontSize=11,
+            leading=15,
+            spaceBefore=14,
+            spaceAfter=4,
+            textColor=colors.HexColor("#1a1a2e"),
+            fontName="Helvetica-Bold",
+        ),
+        "abstract_body": ParagraphStyle(
+            "AbstractBody",
+            parent=base["Normal"],
+            fontSize=10,
+            leading=15,
+            spaceAfter=6,
+            textColor=colors.HexColor("#222222"),
+            alignment=TA_JUSTIFY,
+            leftIndent=12,
+            rightIndent=12,
+        ),
+        "section_heading": ParagraphStyle(
+            "SectionHeading",
+            parent=base["Heading2"],
+            fontSize=12,
+            leading=16,
+            spaceBefore=16,
+            spaceAfter=6,
+            textColor=colors.HexColor("#1a1a2e"),
+            fontName="Helvetica-Bold",
+        ),
+        "body": ParagraphStyle(
+            "Body",
+            parent=base["Normal"],
+            fontSize=10,
+            leading=15,
+            spaceAfter=8,
+            textColor=colors.HexColor("#222222"),
+            alignment=TA_JUSTIFY,
+        ),
+        "url": ParagraphStyle(
+            "URL",
+            parent=base["Normal"],
+            fontSize=8,
+            leading=12,
+            spaceAfter=4,
+            textColor=colors.HexColor("#0066cc"),
+        ),
+    }
+    return styles
+
+
+def _fetch_pmc_article_xml(pmc_id: str) -> Optional[ET.Element]:
+    """
+    Fetch the full PMC article XML via E-utilities (no bot protection).
+    Returns the root XML element, or None on failure.
+    """
+    clean_id = pmc_id.replace("PMC", "").strip()
+    fetch_url = f"{PMC_EUTILS_BASE}/efetch.fcgi"
+    params = {"db": "pmc", "id": clean_id, "retmode": "xml", "rettype": "full"}
+    try:
+        resp = requests.get(fetch_url, params=params, timeout=60)
+        resp.raise_for_status()
+        return ET.fromstring(resp.content)
+    except Exception as e:
+        logging.error(f"Failed to fetch PMC XML for {pmc_id}: {e}")
+        return None
+
+
+def _safe_text(elem: Optional[ET.Element]) -> str:
+    """Extract all text from an XML element safely."""
+    if elem is None:
+        return ""
+    return "".join(elem.itertext()).strip()
+
+
+def _escape_xml(text: str) -> str:
+    """Escape special XML/HTML characters for ReportLab Paragraph."""
+    return (
+        text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+    )
+
+
+def _xml_to_story(root: ET.Element, styles: dict) -> list:
+    """
+    Walk the PMC XML tree and build a ReportLab story (list of Flowables).
+    Extracts: title, authors, journal/date, abstract, and all body sections.
+    """
+    story = []
+    article = root.find(".//article")
+    if article is None:
+        article = root  # fallback
+
+    # ── Title ──────────────────────────────────────────────────────────────
+    title_elem = article.find(".//article-title")
+    title_text = _escape_xml(_safe_text(title_elem)) or "Untitled Article"
+    story.append(Paragraph(title_text, styles["title"]))
+
+    # ── Authors ────────────────────────────────────────────────────────────
+    authors = []
+    for contrib in article.findall(".//contrib[@contrib-type='author']"):
+        given = contrib.findtext(".//given-names", "").strip()
+        surname = contrib.findtext(".//surname", "").strip()
+        name = f"{given} {surname}".strip()
+        if name:
+            authors.append(name)
+    if authors:
+        story.append(Paragraph(_escape_xml(", ".join(authors)), styles["authors"]))
+
+    # ── Journal / Date metadata ────────────────────────────────────────────
+    journal = _safe_text(article.find(".//journal-title"))
+    pub_date_elem = (
+        article.find(".//pub-date[@pub-type='ppub']")
+        or article.find(".//pub-date[@pub-type='epub']")
+        or article.find(".//pub-date")
+    )
+    year = pub_date_elem.findtext("year", "") if pub_date_elem is not None else ""
+    meta_parts = [p for p in [journal, year] if p]
+    if meta_parts:
+        story.append(Paragraph(_escape_xml(" | ".join(meta_parts)), styles["meta"]))
+
+    # ── DOI / URL ──────────────────────────────────────────────────────────
+    doi_elem = article.find(".//article-id[@pub-id-type='doi']")
+    pmc_id_elem = article.find(".//article-id[@pub-id-type='pmc']")
+    if doi_elem is not None and doi_elem.text:
+        doi_url = doi_elem.text if doi_elem.text.startswith("http") else f"https://doi.org/{doi_elem.text}"
+        story.append(Paragraph(f"DOI: {_escape_xml(doi_url)}", styles["url"]))
+    if pmc_id_elem is not None and pmc_id_elem.text:
+        pmc_url = f"https://pmc.ncbi.nlm.nih.gov/articles/PMC{pmc_id_elem.text}/"
+        story.append(Paragraph(f"PMC: {_escape_xml(pmc_url)}", styles["url"]))
+
+    story.append(Spacer(1, 6))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#cccccc")))
+    story.append(Spacer(1, 10))
+
+    # ── Abstract ───────────────────────────────────────────────────────────
+    abstract_elem = article.find(".//abstract")
+    if abstract_elem is not None:
+        story.append(Paragraph("Abstract", styles["abstract_heading"]))
+        # Some abstracts have labelled sections; others are flat paragraphs
+        sections = abstract_elem.findall(".//sec")
+        if sections:
+            for sec in sections:
+                sec_title = _safe_text(sec.find("title"))
+                if sec_title:
+                    story.append(Paragraph(_escape_xml(sec_title), styles["abstract_heading"]))
+                for para in sec.findall(".//p"):
+                    txt = _escape_xml(_safe_text(para))
+                    if txt:
+                        story.append(Paragraph(txt, styles["abstract_body"]))
+        else:
+            for para in abstract_elem.findall(".//p"):
+                txt = _escape_xml(_safe_text(para))
+                if txt:
+                    story.append(Paragraph(txt, styles["abstract_body"]))
+            # Fallback if no <p> tags
+            if not abstract_elem.findall(".//p"):
+                flat = _escape_xml(_safe_text(abstract_elem))
+                if flat:
+                    story.append(Paragraph(flat, styles["abstract_body"]))
+
+        story.append(Spacer(1, 8))
+        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#dddddd")))
+
+    # ── Body sections ──────────────────────────────────────────────────────
+    body = article.find(".//body")
+    if body is not None:
+        for sec in body.findall("sec"):
+            _render_section(sec, story, styles, depth=0)
+
+    # ── Fallback: no body, dump everything ────────────────────────────────
+    if body is None:
+        all_text = _escape_xml("".join(article.itertext()).strip())
+        if all_text:
+            story.append(Paragraph(all_text, styles["body"]))
+
+    return story
+
+
+def _render_section(sec: ET.Element, story: list, styles: dict, depth: int):
+    """Recursively render a <sec> element into ReportLab flowables."""
+    title_elem = sec.find("title")
+    if title_elem is not None:
+        title_text = _escape_xml(_safe_text(title_elem))
+        if title_text:
+            story.append(Paragraph(title_text, styles["section_heading"]))
+
+    for child in sec:
+        tag = child.tag
+        if tag == "title":
+            continue  # already handled above
+        elif tag == "p":
+            txt = _escape_xml(_safe_text(child))
+            if txt:
+                story.append(Paragraph(txt, styles["body"]))
+        elif tag == "sec":
+            _render_section(child, story, styles, depth + 1)
+        elif tag in ("fig", "table-wrap"):
+            # Add caption if present
+            caption = child.find(".//caption/p") or child.find(".//label")
+            if caption is not None:
+                cap_txt = _escape_xml(_safe_text(caption))
+                if cap_txt:
+                    caption_style = ParagraphStyle(
+                        "Caption", parent=styles["body"],
+                        fontSize=9, textColor=colors.HexColor("#555555"),
+                        fontName="Helvetica-Oblique", spaceAfter=4,
+                    )
+                    story.append(Paragraph(f"[Figure/Table: {cap_txt}]", caption_style))
+        elif tag == "list":
+            for item in child.findall("list-item"):
+                item_text = _escape_xml(_safe_text(item))
+                if item_text:
+                    story.append(Paragraph(f"• {item_text}", styles["body"]))
+
+
+def download_pmc_as_pdf(pmc_id: str, output_path: str) -> bool:
+    """
+    Download a PMC article as a PDF by fetching its XML via E-utilities
+    (which has no bot protection) and rendering it locally with ReportLab.
+
+    This completely bypasses the Cloudflare/browser-verification wall on
+    PMC's direct PDF download URLs.
+
+    Args:
+        pmc_id: PMC ID with or without 'PMC' prefix (e.g. 'PMC9876543' or '9876543')
+        output_path: File path where the PDF should be saved (e.g. '/tmp/article.pdf')
+
+    Returns:
+        True on success, False on failure
+    """
+    clean_id = pmc_id.replace("PMC", "").strip()
+    logging.info(f"Generating PDF for PMC{clean_id} → {output_path}")
+
+    # 1. Fetch XML from E-utilities (always works, no bot protection)
+    root = _fetch_pmc_article_xml(clean_id)
+    if root is None:
+        logging.error(f"Could not fetch XML for PMC{clean_id}")
+        return False
+
+    # 2. Build ReportLab styles and story
+    try:
+        styles = _build_pmc_styles()
+        story = _xml_to_story(root, styles)
+    except Exception as e:
+        logging.error(f"Failed to parse article XML for PMC{clean_id}: {e}")
+        return False
+
+    if not story:
+        logging.error(f"No content extracted from PMC{clean_id}")
+        return False
+
+    # 3. Render to PDF
+    try:
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        doc = SimpleDocTemplate(
+            output_path,
+            pagesize=letter,
+            leftMargin=1 * inch,
+            rightMargin=1 * inch,
+            topMargin=1 * inch,
+            bottomMargin=1 * inch,
+            title=f"PMC{clean_id}",
+            author="PMC E-utilities Export",
+        )
+        doc.build(story)
+        size_kb = Path(output_path).stat().st_size // 1024
+        logging.info(f"PDF saved: {output_path} ({size_kb} KB)")
+        return True
+    except Exception as e:
+        logging.error(f"Failed to render PDF for PMC{clean_id}: {e}")
+        return False
+
+
+def get_pmc_pdf_bytes(pmc_id: str) -> Optional[bytes]:
+    """
+    Like download_pmc_as_pdf() but returns the PDF as bytes instead of
+    saving to disk. Useful for streaming the PDF directly to a client.
+
+    Args:
+        pmc_id: PMC ID with or without 'PMC' prefix
+
+    Returns:
+        PDF bytes on success, or None on failure
+    """
+    clean_id = pmc_id.replace("PMC", "").strip()
+    root = _fetch_pmc_article_xml(clean_id)
+    if root is None:
+        return None
+    try:
+        styles = _build_pmc_styles()
+        story = _xml_to_story(root, styles)
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buf,
+            pagesize=letter,
+            leftMargin=1 * inch,
+            rightMargin=1 * inch,
+            topMargin=1 * inch,
+            bottomMargin=1 * inch,
+        )
+        doc.build(story)
+        return buf.getvalue()
+    except Exception as e:
+        logging.error(f"Failed to generate PDF bytes for PMC{clean_id}: {e}")
+        return None
 
 
 def fetch_pmc_papers(query: str, limit: int = 20) -> List[Dict[str, Any]]:
@@ -317,5 +678,3 @@ def _parse_pmc_article(article: ET.Element, pmc_id: Optional[str] = None) -> Opt
     except Exception as e:
         logging.warning(f"Error parsing PMC article: {str(e)}")
         return None
-
-

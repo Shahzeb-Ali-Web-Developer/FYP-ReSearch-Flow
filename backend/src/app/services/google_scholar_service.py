@@ -25,7 +25,11 @@ def fetch_google_scholar_papers(query: str, limit: int = 20) -> List[Dict[str, A
         List of paper dictionaries with Google Scholar-specific fields
     """
     # Check if SerpAPI key is configured
-    serpapi_key = getattr(settings, "SERPAPI_API_KEY", None) or os.getenv("SERPAPI_API_KEY")
+    serpapi_key = (
+        getattr(settings, "SERPAPI_API_KEY", None)
+        or os.getenv("SERPAPI_API_KEY")
+        or os.getenv("SERPAI_API_KEY")
+    )
     if not serpapi_key:
         logging.warning("SERPAPI_API_KEY not configured, Google Scholar search unavailable")
         return []

@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: Optional[str] = None
     CORE_API_KEY: Optional[str] = None
     SERPAPI_API_KEY: Optional[str] = None
+    SEMANTIC_SCHOLAR_API_KEY: Optional[str] = None
     PINECONE_API_KEY: Optional[str] = None
     
     # Pinecone RAG Configuration

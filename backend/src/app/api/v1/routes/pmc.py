@@ -96,8 +96,27 @@ async def extract_pdf_content(
         
         logging.info(f"Extracting PDF content from: {pdf_url}")
         
-        # Extract full text from PDF (no page limit)
-        pdf_text, extraction_error = get_pdf_text_from_url(pdf_url, max_pages=None)
+        import re
+        pmc_id = None
+        match = re.search(r'PMC(\d+)', pdf_url)
+        if match:
+            pmc_id = match.group(1)
+            
+        pdf_text = None
+        extraction_error = None
+        
+        # Strategy 1: Try PMC XML full-text API (bypasses browser check)
+        if pmc_id:
+            logging.info(f"Trying PMC XML full-text extraction for PMC{pmc_id}")
+            xml_text = get_pmc_fulltext_from_xml(pmc_id)
+            if xml_text and len(xml_text.strip()) > 200:
+                pdf_text = xml_text
+                logging.info(f"Successfully got full-text from PMC XML: {len(pdf_text)} chars")
+                
+        # Strategy 2: Fall back to PDF download
+        if pdf_text is None:
+            logging.info(f"XML extraction failed/unavailable, trying PDF download: {pdf_url}")
+            pdf_text, extraction_error = get_pdf_text_from_url(pdf_url, max_pages=None)
         
         if pdf_text is None:
             error_message = extraction_error or "PDF is not available or could not be processed."

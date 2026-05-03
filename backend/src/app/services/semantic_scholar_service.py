@@ -3,9 +3,11 @@ Semantic Scholar API Service
 Handles queries to the Semantic Scholar API for academic papers.
 """
 import logging
+import os
 import requests
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+from ..core.config import settings
 
 SEMANTIC_SCHOLAR_BASE = "https://api.semanticscholar.org/graph/v1"
 SEMANTIC_SCHOLAR_PAPER_URL = "https://www.semanticscholar.org/paper"
@@ -38,6 +40,14 @@ def fetch_semantic_scholar_papers(query: str, limit: int = 20) -> List[Dict[str,
         headers = {
             "User-Agent": "ReSearch-Flow/1.0 (mailto:contact@example.com)"  # Semantic Scholar requires user agent
         }
+        # Using an API key significantly reduces 429 rate-limit failures.
+        s2_key = (
+            settings.SEMANTIC_SCHOLAR_API_KEY
+            or os.getenv("SEMANTIC_SCHOLAR_API_KEY")
+            or os.getenv("S2_API_KEY")
+        )
+        if s2_key:
+            headers["x-api-key"] = s2_key
         
         response = requests.get(url, params=params, headers=headers, timeout=30)
         response.raise_for_status()
