@@ -11,7 +11,6 @@ from ....services.chat_service import (
     ask_about_paper_with_session,
     load_session,
     delete_session,
-    make_paper_id,
 )
 from ....services.pdf_service import get_pdf_text_from_url
 
@@ -109,7 +108,6 @@ async def chat_ask(request_data: dict = Body(...)):
             "session_id": session_id,
             "question": question,
             "answer": answer,
-            "paper_id": make_paper_id(pdf_text),
         }
 
     except HTTPException:
