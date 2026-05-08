@@ -1,11 +1,11 @@
-# 🚀 ReSearch Flow  
+# ReSearch Flow  
 ### AI-Powered Academic Research Assistant  
 
 ReSearch Flow is a full-stack AI-driven platform designed to simplify and accelerate the academic literature review process. It integrates multi-source research retrieval, intelligent deduplication, AI summarization, conversational Q&A, citation network visualization, and draft generation into a single unified system.
 
 ---
 
-## 📌 Problem Statement
+## Problem Statement
 
 Modern research workflows are fragmented across multiple platforms such as Google Scholar, PubMed, and arXiv. Researchers face challenges including:
 
@@ -17,7 +17,7 @@ Modern research workflows are fragmented across multiple platforms such as Googl
 
 ---
 
-## 💡 Solution
+## Solution
 
 ReSearch Flow provides an **end-to-end research assistant** that:
 
@@ -30,41 +30,41 @@ ReSearch Flow provides an **end-to-end research assistant** that:
 
 ---
 
-## ✨ Key Features
+## Key Features
 
-### 🔍 Multi-Source Search
+### Multi-Source Search
 - OpenAlex, arXiv, CORE, PubMed, Semantic Scholar, Google Scholar  
 - Parallel API calls with progressive loading  
 
-### 🧠 AI Summarization
+### AI Summarization
 - GPT-4o based structured summaries  
 - Extracts insights from full PDF content  
 
-### 💬 RAG-based Chat
+### RAG-based Chat
 - Ask questions about any paper  
 - Hybrid retrieval (Pinecone + BM25)  
 - Context-aware responses  
 
-### 🕸️ Citation Mesh
+### Citation Mesh
 - Interactive graph visualization (Cytoscape.js)  
 - Metrics: PageRank, Influence Score, Citation Velocity  
 
-### 📝 Draft Generation
+### Draft Generation
 - AI-generated structured drafts  
 - Uses both text + figures (Vision AI)  
 
-### 🗂️ User Workspace
+### User Workspace
 - Save articles  
 - Manage search history  
 - Add personal notes  
 
-### ⚡ Performance Optimization
+### Performance Optimization
 - Background caching (Supabase)  
 - Redis-based chat session storage  
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 Frontend (React + Vite)
 ↓
 Backend (FastAPI)
@@ -78,33 +78,33 @@ External APIs (OpenAlex, arXiv, etc.)
 
 ---
 
-## 🧰 Tech Stack
+## Tech Stack
 
-### 🌐 Frontend
+### Frontend
 - React 19 + Vite  
 - Tailwind CSS  
 - Framer Motion  
 - Cytoscape.js  
 
-### ⚙️ Backend
+### Backend
 - FastAPI (Python 3.11)  
 - PyMuPDF (PDF parsing)  
 - Pandas  
 
-### 🤖 AI & ML
+### AI & ML
 - OpenAI GPT-4o  
 - LangChain  
 - Pinecone (Vector DB)  
 - BM25 Retriever  
 
-### 🗄️ Database & Storage
+### Database & Storage
 - Supabase (PostgreSQL + Auth)  
 - Upstash Redis  
 - Neo4j (optional)  
 
 ---
 
-## 🗃️ Database Design
+## Database Design
 
 The system uses a hybrid approach:
 
@@ -115,7 +115,7 @@ The system uses a hybrid approach:
 
 ---
 
-## 🔄 Workflow Overview
+## Workflow Overview
 
 1. User enters search query  
 2. System queries multiple APIs in parallel  
@@ -126,7 +126,7 @@ The system uses a hybrid approach:
 
 ---
 
-## 📊 Results & Performance
+## Results & Performance
 
 - ⚡ First results: ~1.8 seconds  
 - 🔁 Full results: 6–9 seconds  
@@ -138,7 +138,7 @@ The system uses a hybrid approach:
 
 ---
 
-## 🔐 Authentication
+## Authentication
 
 - Supabase Auth (JWT-based)  
 - Google OAuth support  
@@ -146,7 +146,7 @@ The system uses a hybrid approach:
 
 ---
 
-## 🧪 Testing
+## Testing
 
 - Unit testing for all core modules  
 - Integration testing for full workflows  
@@ -154,7 +154,7 @@ The system uses a hybrid approach:
 
 ---
 
-## 🚧 Limitations
+## Limitations
 
 - Requires open-access PDFs for full AI analysis  
 - API rate limits (especially Google Scholar)  
@@ -162,7 +162,7 @@ The system uses a hybrid approach:
 
 ---
 
-## 🔮 Future Work
+## Future Work
 
 - Semantic vector search (Sentence-BERT)  
 - Multi-modal RAG (text + figures)  
@@ -173,7 +173,7 @@ The system uses a hybrid approach:
 
 ---
 
-## 👨‍💻 Team
+## Team
 
 - **Haroon Mahmood (BSDSF22M020@pucit.edu.pk)**  
 - **Maryam Abid (BSDSF22M028pucit.edu.pk)**  
@@ -182,7 +182,7 @@ The system uses a hybrid approach:
 
 ---
 
-## 🎓 Supervisor
+## Supervisor
 
 **Dr. Khurram Shahzad**  
 Faculty of Computing & Information Technology  
@@ -190,7 +190,7 @@ University of the Punjab, Lahore
 
 ---
 
-## 📜 License
+## License
 
 This project is developed for academic purposes as a Final Year Project.  
 
