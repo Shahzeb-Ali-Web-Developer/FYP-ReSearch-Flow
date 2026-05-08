@@ -175,10 +175,10 @@ The system uses a hybrid approach:
 
 ## 👨‍💻 Team
 
-- **Haroon Mahmood (BSDSF22M020)**  
-- **Maryam Abid (BSDSF22M028)**  
-- **Areesha Rizwan (BSDSF22M048)**  
-- **Shahzeb Ali (BSDSF22M054)**  
+- **Haroon Mahmood (BSDSF22M020@pucit.edu.pk)**  
+- **Maryam Abid (BSDSF22M028pucit.edu.pk)**  
+- **Areesha Rizwan (BSDSF22M048pucit.edu.pk)**  
+- **Shahzeb Ali (BSDSF22M054pucit.edu.pk)**  
 
 ---
 
