@@ -66,13 +66,13 @@ ReSearch Flow provides an **end-to-end research assistant** that:
 
 ## System Architecture
 Frontend (React + Vite)
-↓
+>
 Backend (FastAPI)
-↓
+>
 AI Layer (LangChain + GPT-4o)
-↓
+>
 Databases (Supabase, Pinecone, Redis)
-↓
+>
 External APIs (OpenAlex, arXiv, etc.)
 
 
